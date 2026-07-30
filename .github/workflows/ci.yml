@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ultispro
+          POSTGRES_PASSWORD: ultispro
+          POSTGRES_DB: ultispro_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ultispro"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - run: npm install
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - name: Apply migrations to the test database
+        run: npm run migrate --workspace=apps/api
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://ultispro:ultispro@localhost:5432/ultispro_test
+          REDIS_URL: redis://localhost:6379
+          WEB_ORIGIN: http://localhost:3000
+          JWT_SECRET: ci-test-secret-please-change-me-32chars
+
+      - run: npm run test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgresql://ultispro:ultispro@localhost:5432/ultispro_test
+          REDIS_URL: redis://localhost:6379
+          WEB_ORIGIN: http://localhost:3000
+          JWT_SECRET: ci-test-secret-please-change-me-32chars
+
+      - run: npm run build

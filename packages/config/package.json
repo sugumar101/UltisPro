@@ -1,0 +1,6 @@
+{
+  "name": "@ultispro/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared, non-compiled configuration (Tailwind design tokens) consumed via relative import."
+}

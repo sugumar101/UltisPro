@@ -1,0 +1,11 @@
+-- Default HSN code per product type, so a clothing retailer sets "T-Shirts
+-- => 6109" once and every t-shirt created afterwards inherits it instead of
+-- the shopkeeper typing (or guessing) an HSN per product.
+--
+-- HSN is a government classification that drives the GST rate, so it is
+-- never auto-*generated* — the application only ever suggests a standard
+-- code from a fixed lookup (apps/api/src/shared/hsn.ts) and inherits what
+-- an admin has confirmed here. Nullable because a type may legitimately not
+-- have one set yet, and because non-apparel verticals may not use this at
+-- all.
+ALTER TABLE product_types ADD COLUMN default_hsn_code VARCHAR(20);

@@ -1,0 +1,309 @@
+'use client';
+
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useRequireAuth } from '../../../lib/hooks/use-require-auth';
+import { getProduct, listBrands, type Product, type ProductVariant, type Brand } from '../../../lib/products-api';
+import { getOrganization } from '../../../lib/settings-api';
+import { Barcode } from '../../../components/ui/barcode';
+import { PriceLabel } from '../../../components/ui/price-label';
+import { ApiError } from '../../../lib/api-client';
+
+/**
+ * Retail price labels, sized for a roll/thermal label printer.
+ *
+ * One label per printed page (`@page` + a page break after each), which is
+ * how a label printer expects input — it feeds and cuts per page. Products
+ * expand to one label per **variant**, because in a clothing shop the thing
+ * that needs a label is the size, not the style.
+ *
+ * Two templates:
+ *  - `price-tag`  — the full retail tag: brand header, gender strip, product
+ *                   name, size/colour, barcode, and MRP with the
+ *                   "inclusive of all taxes" line Indian retail requires.
+ *  - `compact`    — name + barcode + price only, for small labels where the
+ *                   tag layout would be unreadable.
+ */
+
+const LABEL_PRESETS = {
+  '50x30': { label: '50 × 30 mm', width: 50, height: 30 },
+  '50x25': { label: '50 × 25 mm', width: 50, height: 25 },
+  '40x30': { label: '40 × 30 mm', width: 40, height: 30 },
+  '38x25': { label: '38 × 25 mm', width: 38, height: 25 },
+  '75x50': { label: '75 × 50 mm', width: 75, height: 50 },
+} as const;
+
+type PresetKey = keyof typeof LABEL_PRESETS;
+type Template = 'price-tag' | 'compact';
+
+/**
+ * Maps a product's stored gender onto the segments printed on the tag. Boy
+ * and girl both fall under KIDS; unisex highlights nothing, since the tag
+ * then applies to all three. The segment strip itself lives in PriceLabel.
+ */
+function activeSegments(gender: string | null): string[] {
+  switch (gender) {
+    case 'men':
+      return ['MEN'];
+    case 'women':
+      return ['WOMEN'];
+    case 'boy':
+    case 'girl':
+      return ['KIDS'];
+    default:
+      return [];
+  }
+}
+
+interface LabelRow {
+  key: string;
+  product: Product;
+  variant: ProductVariant;
+}
+
+export default function BarcodeLabelsPage() {
+  return (
+    <Suspense fallback={<p style={{ padding: 24 }}>Loading labels…</p>}>
+      <BarcodeLabels />
+    </Suspense>
+  );
+}
+
+function BarcodeLabels() {
+  const { ready, accessToken } = useRequireAuth();
+  const searchParams = useSearchParams();
+
+  const [rows, setRows] = useState<LabelRow[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [orgName, setOrgName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const [preset, setPreset] = useState<PresetKey>('50x30');
+  const [template, setTemplate] = useState<Template>('price-tag');
+  const [copies, setCopies] = useState(1);
+  const [headerOverride, setHeaderOverride] = useState('');
+  // Thermal printers differ in how close to the physical label edge they can
+  // print; nudge this up if anything clips on your hardware.
+  const [safeInset, setSafeInset] = useState(0);
+
+  const ids = useMemo(() => (searchParams.get('ids') ?? '').split(',').filter(Boolean), [searchParams]);
+
+  useEffect(() => {
+    if (!ready || !accessToken || ids.length === 0) {
+      setLoading(false);
+      return;
+    }
+
+    Promise.all([
+      Promise.all(ids.map((id) => getProduct(accessToken, id))),
+      listBrands(accessToken).catch(() => [] as Brand[]),
+      getOrganization(accessToken).catch(() => null),
+    ])
+      .then(([results, brandList, organization]) => {
+        const next: LabelRow[] = [];
+        for (const result of results) {
+          for (const variant of result.variants) {
+            next.push({ key: variant.id, product: result.product, variant });
+          }
+        }
+        setRows(next);
+        setBrands(brandList);
+        if (organization) setOrgName(organization.display_name);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load products'))
+      .finally(() => setLoading(false));
+  }, [ready, accessToken, ids]);
+
+  /** Brand name if the product has one, else the org name, else a manual override. */
+  function headerFor(product: Product): string {
+    if (headerOverride.trim()) return headerOverride.trim();
+    const brand = brands.find((b) => b.id === product.brand_id);
+    return brand?.name ?? orgName ?? '';
+  }
+
+  if (!ready) return null;
+
+  const size = LABEL_PRESETS[preset];
+  const printableLabels = rows.flatMap((row) => Array.from({ length: copies }, (_, i) => ({ ...row, copy: i })));
+  // The tag scales to any label, so it can't clip — but below roughly this
+  // size the type gets small enough to be worth warning about.
+  const tagIsComfortable = size.width >= 40 && size.height >= 25;
+
+  return (
+    <>
+      <style>{`
+        @page { size: ${size.width}mm ${size.height}mm; margin: 0; }
+        body { background: #f6f7fb; }
+        .toolbar { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+                   padding: 12px 16px; background: #fff; border-bottom: 1px solid #e2e6ef; }
+        .toolbar button { padding: 8px 16px; border-radius: 8px; border: 1px solid #e2e6ef; background: #fff;
+                          cursor: pointer; font-size: 14px; transition: all .2s cubic-bezier(.32,.72,0,1); }
+        .toolbar button:hover { border-color: #9aa2b8; }
+        .toolbar button.primary { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+        .toolbar button.primary:hover { background: #4338ca; }
+        .toolbar select, .toolbar input { padding: 7px 10px; border-radius: 8px; border: 1px solid #e2e6ef; font-size: 14px; }
+        .sheet { display: flex; flex-wrap: wrap; gap: 10px; padding: 20px; }
+        .empty { padding: 40px; text-align: center; color: #5c6478; font-family: system-ui, sans-serif; }
+
+        /* The price-tag template is a single self-sizing SVG, so the box only
+           needs to be exactly the label and never clip. The compact template
+           still uses flow layout inside it. */
+        .label {
+          width: ${size.width}mm; height: ${size.height}mm;
+          background: #fff; border: 1px solid #e2e6ef; border-radius: 3px;
+          box-sizing: border-box; overflow: hidden;
+          font-family: system-ui, -apple-system, sans-serif; color: #000;
+          display: flex; flex-direction: column;
+        }
+
+        /* --- Compact template --- */
+        .compact { align-items: center; justify-content: center; padding: 1.5mm; text-align: center; }
+        .compact .name { font: 600 7pt system-ui, sans-serif; line-height: 1.15;
+                         max-height: 2.4em; overflow: hidden; margin-bottom: 0.5mm; }
+        .compact .price { font: 700 8.5pt system-ui, sans-serif; margin-top: 0.5mm; }
+
+        @media print {
+          body { background: #fff; }
+          .toolbar { display: none !important; }
+          .sheet { display: block; padding: 0; gap: 0; }
+          .label { border: none; border-radius: 0; page-break-after: always; break-after: page; }
+          .label:last-child { page-break-after: auto; break-after: auto; }
+        }
+      `}</style>
+
+      <div className="toolbar">
+        <button className="primary" onClick={() => window.print()} disabled={printableLabels.length === 0}>
+          Print{' '}
+          {printableLabels.length > 0
+            ? `${printableLabels.length} label${printableLabels.length === 1 ? '' : 's'}`
+            : ''}
+        </button>
+
+        <label style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Template
+          <select value={template} onChange={(e) => setTemplate(e.target.value as Template)}>
+            <option value="price-tag">Price tag</option>
+            <option value="compact">Compact</option>
+          </select>
+        </label>
+
+        <label style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Label size
+          <select value={preset} onChange={(e) => setPreset(e.target.value as PresetKey)}>
+            {Object.entries(LABEL_PRESETS).map(([key, value]) => (
+              <option key={key} value={key}>
+                {value.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Header
+          <input
+            placeholder="Brand / store name"
+            value={headerOverride}
+            style={{ width: 150 }}
+            onChange={(e) => setHeaderOverride(e.target.value)}
+          />
+        </label>
+
+        <label style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+          Copies each
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={copies}
+            style={{ width: 66 }}
+            onChange={(e) => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+          />
+        </label>
+
+        <label
+          style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}
+          title="Extra margin on every edge. Increase if your printer clips the label."
+        >
+          Edge margin
+          <input
+            type="number"
+            min={0}
+            max={5}
+            step={0.5}
+            value={safeInset}
+            style={{ width: 66 }}
+            onChange={(e) => setSafeInset(Math.max(0, Math.min(5, Number(e.target.value) || 0)))}
+          />
+          mm
+        </label>
+
+        <button onClick={() => window.close()}>Close</button>
+
+        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#5c6478' }}>
+          Print at 100% scale (no “fit to page”) — resizing breaks scannability. If edges clip, raise Edge margin.
+        </span>
+      </div>
+
+      {error ? (
+        <p className="empty" style={{ color: '#dc2626' }}>
+          {error}
+        </p>
+      ) : null}
+      {loading ? <p className="empty">Loading labels…</p> : null}
+      {!loading && !error && rows.length === 0 ? (
+        <p className="empty">No products selected. Pick products on the Products page and choose “Print barcodes”.</p>
+      ) : null}
+      {!loading && template === 'price-tag' && !tagIsComfortable ? (
+        <p className="empty" style={{ color: '#d97706', paddingBottom: 0 }}>
+          Everything still fits at this size, but the text will be small. 40 × 25 mm or larger reads more comfortably —
+          or switch to the Compact template.
+        </p>
+      ) : null}
+
+      <div className="sheet">
+        {printableLabels.map((row, index) => {
+          const { product, variant } = row;
+          const size_ = variant.attributes?.size;
+          const color = variant.attributes?.color;
+          const price = Number(variant.mrp) || Number(variant.selling_price);
+          const on = activeSegments(product.gender);
+
+          return (
+            <div className="label" key={`${row.key}-${row.copy}-${index}`}>
+              {template === 'price-tag' ? (
+                <PriceLabel
+                  widthMm={size.width}
+                  heightMm={size.height}
+                  safeInsetMm={safeInset}
+                  brand={headerFor(product)}
+                  productName={product.name}
+                  size={size_}
+                  color={color}
+                  barcode={variant.barcode ?? ''}
+                  caption={variant.sku}
+                  price={price}
+                  activeSegments={on}
+                />
+              ) : (
+                <div className="compact" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                  <div className="name">
+                    {product.name}
+                    {size_ ? ` · ${size_}` : ''}
+                  </div>
+                  <Barcode
+                    value={variant.barcode ?? ''}
+                    caption={variant.sku}
+                    height={size.height > 26 ? 40 : 30}
+                    moduleWidth={1.3}
+                  />
+                  <div className="price">₹{price.toLocaleString('en-IN')}</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}

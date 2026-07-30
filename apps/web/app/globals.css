@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    /* Smooth in-page navigation without a jarring jump. */
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Tabular figures everywhere by default: prices and quantities in a
+       table shouldn't shift horizontally as digits change. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  body {
+    @apply bg-background text-on-surface font-sans antialiased;
+  }
+
+  /* One consistent, visible focus ring instead of the browser default —
+     required for the WCAG AA target on admin screens, and it's what makes
+     keyboard navigation feel deliberate rather than broken. */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-primary/40 ring-offset-1 ring-offset-surface-bright;
+  }
+
+  /* Slim, unobtrusive scrollbars. The default chunky Windows scrollbar is
+     the single biggest giveaway of a dated-feeling web app. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.outline-variant') transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    @apply rounded-full border-[3px] border-solid border-transparent bg-outline-variant bg-clip-content;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    @apply bg-outline;
+  }
+
+  /* Native controls inherit the brand colour rather than the OS blue. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    @apply h-4 w-4 cursor-pointer rounded-sm accent-primary;
+  }
+
+  select {
+    @apply cursor-pointer;
+  }
+}
+
+@layer components {
+  /* Shared field styling so inputs, selects and textareas match without
+     each page re-declaring the same six classes. */
+  .field-base {
+    @apply w-full rounded border border-outline-variant bg-surface-container-lowest px-3 py-2 text-body-md
+           text-on-surface transition-all duration-200 ease-smooth
+           placeholder:text-on-surface-variant/60
+           hover:border-outline
+           focus:border-primary focus:shadow-focus-ring focus:outline-none
+           disabled:cursor-not-allowed disabled:bg-surface-container disabled:text-on-surface-variant;
+  }
+
+  /* Row hover used across every data table. */
+  .row-hover {
+    @apply transition-colors duration-150 ease-smooth hover:bg-surface-container-low;
+  }
+}
+
+@media print {
+  /* Never print app chrome — the print routes render their own document. */
+  .no-print {
+    display: none !important;
+  }
+}

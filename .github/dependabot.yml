@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Root workspace manifest also covers apps/* and packages/* via npm
+  # workspaces — Dependabot resolves workspace package.json files from a
+  # single root entry, so one npm entry is correct here, not one per app.
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 10
+    groups:
+      # Security patches land individually so each is reviewable on its
+      # own; everything else batches to keep PR volume manageable.
+      production-dependencies:
+        dependency-type: 'production'
+        update-types: ['minor', 'patch']
+      development-dependencies:
+        dependency-type: 'development'
+        update-types: ['minor', 'patch']
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
