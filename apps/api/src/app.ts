@@ -3,9 +3,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
-import { env } from './config/env';
+import { env, allowedOrigins } from './config/env';
 import { logger } from './shared/logger';
 import { requestContext } from './shared/request-context.middleware';
+import { enforceHttps, globalRateLimit, hardenResponseHeaders } from './shared/security.middleware';
 import { errorHandler, notFoundHandler } from './shared/error-middleware';
 import { healthRouter } from './modules/health/health.routes';
 import { authRouter } from './modules/auth/auth.routes';
@@ -37,11 +38,60 @@ export function createApp(): Express {
   const app = express();
 
   app.disable('x-powered-by');
-  app.use(helmet());
-  app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
+
+  // MUST come before anything that reads req.ip or req.secure. Behind a
+  // load balancer every request appears to come from the proxy, which would
+  // put all clients in one rate-limit bucket (making the limiter useless
+  // and trivially abusable) and record the proxy's address in audit logs.
+  // Configured as a hop count rather than `true`: trusting the whole
+  // X-Forwarded-For chain lets a client prepend a forged address and
+  // impersonate any IP. 0 (the default) means no proxy — correct for local
+  // dev and for running the container directly.
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
+
+  app.use(
+    helmet({
+      // This is a JSON API, never a browsing context: lock the CSP right
+      // down rather than shipping helmet's HTML-oriented default.
+      contentSecurityPolicy: {
+        directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"] },
+      },
+      // Two years, with subdomains, and preload-eligible. Only meaningful
+      // once TLS is actually terminating in front of this.
+      hsts: env.NODE_ENV === 'production' ? { maxAge: 63072000, includeSubDomains: true, preload: true } : false,
+      crossOriginResourcePolicy: { policy: 'same-site' },
+      referrerPolicy: { policy: 'no-referrer' },
+    }),
+  );
+
+  app.use(enforceHttps);
+  app.use(hardenResponseHeaders);
+
+  app.use(
+    cors({
+      // Reflect only known origins instead of echoing whatever asked. With
+      // `credentials: true` the refresh cookie rides along, so a permissive
+      // origin here would let any site drive an authenticated session.
+      origin(origin, callback) {
+        // Same-origin/server-to-server calls send no Origin header.
+        if (!origin || allowedOrigins.includes(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error(`Origin ${origin} is not allowed by CORS`));
+      },
+      credentials: true,
+      maxAge: 86400,
+    }),
+  );
+
+  // 1mb is ample for the largest legitimate payload (a POS cart) and caps
+  // the memory a single request can force the process to allocate.
   app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: false, limit: '1mb' }));
   app.use(cookieParser());
   app.use(requestContext);
+  app.use(globalRateLimit);
   app.use(
     pinoHttp({
       logger,

@@ -25,9 +25,17 @@ const forgotPasswordLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 5, keyP
 const resetPasswordLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: 'auth:reset-password' });
 
 const cookieOptions = {
+  // Unreadable to JavaScript, so an XSS payload can't exfiltrate the
+  // long-lived refresh token even if it runs.
   httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  // SameSite=None is only accepted alongside Secure, so force it on in that
+  // case regardless of NODE_ENV — otherwise browsers drop the cookie
+  // silently and logins appear to "randomly" not persist.
+  secure: env.NODE_ENV === 'production' || env.COOKIE_SAMESITE === 'none',
+  sameSite: env.COOKIE_SAMESITE,
+  // Scoped to the auth routes: no other endpoint needs this cookie, so it
+  // isn't attached to every API call where it could leak via logs or a
+  // misbehaving proxy.
   path: '/api/v1/auth',
 };
 

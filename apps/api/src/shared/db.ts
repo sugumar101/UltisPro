@@ -684,7 +684,56 @@ export interface Database {
   notifications: NotificationsTable;
 }
 
-export const pool = new Pool({ connectionString: env.DATABASE_URL });
+/**
+ * Connection pool sizing.
+ *
+ * The default `max` is 10, which is the practical throughput ceiling of a
+ * single instance: every checkout holds a connection for a multi-statement
+ * transaction with row locks, so ten concurrent checkouts saturate the
+ * process regardless of how much CPU is free.
+ *
+ * Sizing is a budget, not a maximum-is-better dial. The real constraint is
+ * the *server's* connection limit shared across every replica:
+ *
+ *     DB_POOL_MAX x replica count  <  server max_connections
+ *
+ * Neon's smaller plans allow a few hundred; exceeding it doesn't degrade,
+ * it hard-fails new connections. 20 x 3 replicas = 60 leaves ample room,
+ * which is why the default is deliberately modest rather than large.
+ */
+export const pool = new Pool({
+  connectionString: env.DATABASE_URL,
+  max: env.DB_POOL_MAX,
+
+  // Return idle connections rather than holding them open forever. Serverless
+  // Postgres bills for connection time, and idle sockets are the first thing
+  // an intermediate proxy drops silently.
+  idleTimeoutMillis: 30_000,
+
+  // Fail fast when the database is unreachable instead of queueing requests
+  // until the whole process wedges. Surfaces as a 500 with a real message.
+  connectionTimeoutMillis: 10_000,
+
+  // Server-side guard: no single statement may pin a connection indefinitely.
+  // Without this one pathological query (a report over a huge date range,
+  // say) holds a pool slot until the client gives up, and under load the
+  // pool drains and the API stops responding entirely. Set per connection at
+  // creation so it applies to every query on it.
+  statement_timeout: env.DB_STATEMENT_TIMEOUT_MS,
+
+  // Bounds how long a transaction may sit idle holding locks — a client that
+  // disconnects mid-checkout would otherwise keep stock rows locked until
+  // the TCP timeout, blocking every other till selling that variant.
+  idle_in_transaction_session_timeout: 30_000,
+});
+
+pool.on('error', (err) => {
+  // A pooled connection can fail while idle (network blip, server restart).
+  // pg emits this on the pool rather than a request, and an unhandled
+  // 'error' event would crash the process.
+  // eslint-disable-next-line no-console
+  console.error('Unexpected database pool error:', err.message);
+});
 
 export const db = new Kysely<Database>({
   dialect: new PostgresDialect({ pool }),

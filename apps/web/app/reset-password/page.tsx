@@ -12,7 +12,13 @@ import { FormField } from '../../components/ui/form-field';
 import { resetPassword } from '../../lib/auth-api';
 import { ApiError } from '../../lib/api-client';
 
-const schema = z.object({ newPassword: z.string().min(8, 'At least 8 characters') });
+// Mirrors the API's password policy (apps/api/src/modules/auth/auth.dto.ts).
+const schema = z.object({
+  newPassword: z
+    .string()
+    .min(10, 'At least 10 characters — a short phrase works well')
+    .max(72, 'At most 72 characters'),
+});
 type FormValues = z.infer<typeof schema>;
 
 function ResetPasswordForm() {

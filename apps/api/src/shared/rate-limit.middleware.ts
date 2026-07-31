@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { AppError } from './app-error';
 import { env } from '../config/env';
+import { incrementWindow } from './redis';
 
 /**
  * Fixed-window in-memory rate limiter, applied to the auth endpoints most
@@ -81,9 +82,24 @@ export interface RateLimitMiddlewareOptions extends RateLimitOptions {
   keyPrefix: string;
 }
 
+/**
+ * Rate-limit middleware backed by Redis, falling back to a per-process
+ * counter when Redis is unavailable.
+ *
+ * Redis is what makes the limit *mean* something once the API runs on more
+ * than one instance: with per-process counters and three replicas, a
+ * "10 logins per 15 minutes" rule actually permits 30, and an attacker
+ * spreading attempts across instances sees no limit at all.
+ *
+ * The fallback is deliberate rather than fail-closed. If Redis is down,
+ * rejecting every request would take the tills offline over a *rate
+ * limiter's* backing store — far worse than a limit that degrades to
+ * per-instance for a few minutes.
+ */
 export function rateLimit(options: RateLimitMiddlewareOptions) {
   const { keyPrefix, ...counterOptions } = options;
-  const counter = createRateLimitCounter(counterOptions);
+  const fallbackCounter = createRateLimitCounter(counterOptions);
+  const windowSeconds = Math.ceil(counterOptions.windowMs / 1000);
 
   return function rateLimitMiddleware(req: Request, _res: Response, next: NextFunction): void {
     // Every integration test file drives multiple organizations through
@@ -101,14 +117,39 @@ export function rateLimit(options: RateLimitMiddlewareOptions) {
     }
 
     const key = `${keyPrefix}:${req.ip ?? 'unknown'}`;
-    const decision = counter.check(key);
 
-    if (!decision.allowed) {
-      throw new AppError('RATE_LIMITED', 'Too many requests. Please try again later.', {
-        retryAfterSeconds: decision.retryAfterSeconds,
-      });
-    }
+    void (async () => {
+      try {
+        const shared = await incrementWindow(`ratelimit:${key}`, windowSeconds);
 
-    next();
+        if (shared) {
+          if (shared.count > counterOptions.max) {
+            next(
+              new AppError('RATE_LIMITED', 'Too many requests. Please try again later.', {
+                retryAfterSeconds: shared.ttlSeconds,
+              }),
+            );
+            return;
+          }
+          next();
+          return;
+        }
+
+        // Redis unavailable — degrade to this process's own counter.
+        const decision = fallbackCounter.check(key);
+        if (!decision.allowed) {
+          next(
+            new AppError('RATE_LIMITED', 'Too many requests. Please try again later.', {
+              retryAfterSeconds: decision.retryAfterSeconds,
+            }),
+          );
+          return;
+        }
+        next();
+      } catch (err) {
+        // Never let a limiter fault block a sale.
+        next(err instanceof AppError ? err : undefined);
+      }
+    })();
   };
 }

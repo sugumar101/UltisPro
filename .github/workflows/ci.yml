@@ -45,6 +45,13 @@ jobs:
 
       - run: npm run typecheck
 
+      # Fails the build on a known-exploitable dependency. Scoped to high and
+      # critical: at moderate and below the npm advisory database is noisy
+      # enough that a blocking gate gets routinely ignored, which is worse
+      # than not having one. Review moderates on the weekly Dependabot PRs.
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
       - name: Apply migrations to the test database
         run: npm run migrate --workspace=apps/api
         env:

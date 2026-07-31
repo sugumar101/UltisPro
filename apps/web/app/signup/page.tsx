@@ -31,7 +31,12 @@ const signupSchema = z.object({
   businessType: z.enum(BUSINESS_TYPES),
   fullName: z.string().min(2, 'Required'),
   email: z.string().email('Enter a valid email'),
-  password: z.string().min(8, 'At least 8 characters'),
+  // Mirrors the API's policy (apps/api/src/modules/auth/auth.dto.ts) so the
+  // user is told before submitting rather than by a server rejection.
+  password: z
+    .string()
+    .min(10, 'At least 10 characters — a short phrase works well')
+    .max(72, 'At most 72 characters'),
 });
 type SignupFormValues = z.infer<typeof signupSchema>;
 

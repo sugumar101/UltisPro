@@ -8,25 +8,51 @@ import { notificationsRepository } from './notifications.repository';
  * for this cross-cutting concern). Instead, low-stock and expiry conditions
  * are checked on demand whenever a user opens the notification center, and
  * a broadcast notification (`user_id: null`) is created the first time a
- * given condition is seen — `findUnreadByReference` keeps this idempotent,
+ * given condition is seen — `unreadReferenceIds` keeps this idempotent,
  * so refreshing the bell repeatedly doesn't spam duplicate rows. This is a
  * documented simplification, not the real-time system a production
  * deployment would want.
  */
+/**
+ * How long a scan result is considered fresh, per organization.
+ *
+ * The bell polls every 60s per logged-in user, so without this a shop with
+ * 8 staff online re-scans its entire stock position 8 times a minute to
+ * produce, almost always, nothing new. Low-stock and expiry are not
+ * second-sensitive conditions; a couple of minutes of staleness is
+ * invisible to the user and removes almost all of the load.
+ *
+ * In-memory and therefore per-process: with N replicas the effective scan
+ * rate is N x this. That's an acceptable ceiling (it's a cache, not a
+ * correctness mechanism) and still orders of magnitude better than the
+ * per-request behaviour it replaces.
+ */
+const SCAN_INTERVAL_MS = 120_000;
+const lastScanAt = new Map<string, number>();
+
 async function generateLiveNotifications(organizationId: string): Promise<void> {
-  const [lowStock, expiring] = await Promise.all([
+  const now = Date.now();
+  const previous = lastScanAt.get(organizationId);
+  if (previous !== undefined && now - previous < SCAN_INTERVAL_MS) return;
+  // Recorded before the work, not after: two concurrent polls should not
+  // both decide they're the one to scan.
+  lastScanAt.set(organizationId, now);
+
+  // Four queries total, regardless of how many conditions are outstanding.
+  // The previous version issued one duplicate-check per condition, so cost
+  // grew with (users x low-stock items) — see unreadReferenceIds().
+  const [lowStock, expiring, notifiedVariants, notifiedBatches] = await Promise.all([
     inventoryRepository.getLowStock(organizationId),
     inventoryRepository.getExpiringBatches(organizationId, 30),
+    notificationsRepository.unreadReferenceIds(organizationId, 'product_variants'),
+    notificationsRepository.unreadReferenceIds(organizationId, 'batches'),
   ]);
 
+  const pending: Parameters<typeof notificationsRepository.createMany>[0] = [];
+
   for (const item of lowStock) {
-    const existing = await notificationsRepository.findUnreadByReference(
-      organizationId,
-      'product_variants',
-      item.productVariantId,
-    );
-    if (existing) continue;
-    await notificationsRepository.create({
+    if (notifiedVariants.has(item.productVariantId)) continue;
+    pending.push({
       organization_id: organizationId,
       user_id: null,
       type: 'low_stock',
@@ -38,9 +64,8 @@ async function generateLiveNotifications(organizationId: string): Promise<void> 
   }
 
   for (const batch of expiring) {
-    const existing = await notificationsRepository.findUnreadByReference(organizationId, 'batches', batch.batchId);
-    if (existing) continue;
-    await notificationsRepository.create({
+    if (notifiedBatches.has(batch.batchId)) continue;
+    pending.push({
       organization_id: organizationId,
       user_id: null,
       type: 'expiry_alert',
@@ -50,6 +75,14 @@ async function generateLiveNotifications(organizationId: string): Promise<void> 
       reference_id: batch.batchId,
     });
   }
+
+  // One insert for everything rather than one per condition.
+  await notificationsRepository.createMany(pending);
+}
+
+/** Tests need to defeat the scan throttle to assert generation behaviour. */
+export function __resetNotificationScanThrottle(): void {
+  lastScanAt.clear();
 }
 
 export const notificationsService = {
