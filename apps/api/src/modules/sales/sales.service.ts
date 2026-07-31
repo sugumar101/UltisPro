@@ -157,18 +157,48 @@ export const salesService = {
       variants.set(item.productVariantId, variant);
     }
 
+    // Pass 1: line gross/net after each line's own discount.
+    const baseLines = input.items.map((item) => {
+      const lineGross = item.quantity * item.unitPrice;
+      return { ...item, lineGross, lineNetBeforeBill: lineGross - item.discountAmount };
+    });
+
+    const netBeforeBillDiscount = baseLines.reduce((sum, l) => sum + l.lineNetBeforeBill, 0);
+
+    // A bill-level discount is **prorated across the lines before tax**, not
+    // subtracted from the final total. Taking it off the total would leave
+    // `tax_total` computed on the undiscounted value — i.e. charging the
+    // customer GST on money they didn't pay, and filing a GST return that
+    // doesn't reconcile against the invoice. Spreading it pro-rata by line
+    // value keeps each line's taxable value correct and makes the stored
+    // `discount_total` the true total discount given.
+    const requestedBillDiscount = input.billDiscountAmount ?? 0;
+    if (requestedBillDiscount > netBeforeBillDiscount + ROUNDING_TOLERANCE) {
+      throw new AppError(
+        'VALIDATION_ERROR',
+        `Bill discount (${requestedBillDiscount}) cannot exceed the pre-tax total (${netBeforeBillDiscount.toFixed(2)})`,
+      );
+    }
+    const billDiscount = Math.min(requestedBillDiscount, netBeforeBillDiscount);
+
     let subtotal = 0;
     let discountTotal = 0;
     let taxTotal = 0;
-    const lineComputations = input.items.map((item) => {
-      const lineGross = item.quantity * item.unitPrice;
-      const lineNet = lineGross - item.discountAmount;
+    const lineComputations = baseLines.map((item) => {
+      // Guard against divide-by-zero on an all-free cart.
+      const share = netBeforeBillDiscount > 0 ? item.lineNetBeforeBill / netBeforeBillDiscount : 0;
+      const billDiscountShare = billDiscount * share;
+      const lineDiscount = item.discountAmount + billDiscountShare;
+      const lineNet = item.lineGross - lineDiscount;
+
       const rate = item.taxId ? Number(taxes.get(item.taxId)!.rate_percent) : 0;
       const taxAmount = lineNet * (rate / 100);
-      subtotal += lineGross;
-      discountTotal += item.discountAmount;
+
+      subtotal += item.lineGross;
+      discountTotal += lineDiscount;
       taxTotal += taxAmount;
-      return { ...item, lineNet, taxAmount, lineTotal: lineNet + taxAmount };
+
+      return { ...item, discountAmount: lineDiscount, lineNet, taxAmount, lineTotal: lineNet + taxAmount };
     });
     const grandTotal = subtotal - discountTotal + taxTotal;
 

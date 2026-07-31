@@ -164,6 +164,7 @@ export default function ProductsPage() {
                 <th className="p-4">Name</th>
                 <th className="p-4">HSN</th>
                 <th className="p-4">Variants</th>
+                <th className="p-4">In stock</th>
                 <th className="p-4">Status</th>
                 <th className="p-4" />
               </tr>
@@ -193,7 +194,22 @@ export default function ProductsPage() {
                     ) : null}
                   </td>
                   <td className="p-4 font-mono-data text-on-surface-variant">{p.hsn_code ?? '—'}</td>
-                  <td className="p-4">{p.has_variants ? 'Multiple' : 'Single'}</td>
+                  <td className="p-4 text-on-surface-variant">
+                    {p.variantCount ?? (p.has_variants ? '—' : 1)}
+                  </td>
+                  <td className="p-4">
+                    {/* Summed across every branch. Zero is called out because
+                        it's the state that blocks a sale at the till. */}
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-sm font-semibold ${
+                        (p.totalStock ?? 0) <= 0
+                          ? 'bg-error-container text-on-error-container'
+                          : 'bg-success-container text-on-success-container'
+                      }`}
+                    >
+                      {p.totalStock ?? 0}
+                    </span>
+                  </td>
                   <td className="p-4">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
@@ -232,7 +248,7 @@ export default function ProductsPage() {
               ))}
               {!loading && products.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-10 text-center text-on-surface-variant">
+                  <td colSpan={7} className="p-10 text-center text-on-surface-variant">
                     No products yet.
                   </td>
                 </tr>

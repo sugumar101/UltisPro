@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 export const variantInputSchema = z.object({
-  sku: z.string().min(1).max(100),
+  // Optional: omitted, the service mints a readable unique SKU (see
+  // products.service.ts#generateUniqueSku). A SKU is an internal identifier
+  // whose only hard requirement is uniqueness within the organization, so
+  // making a shopkeeper invent one per variant is needless work — and
+  // hand-typed SKUs are exactly where duplicates and typos come from.
+  sku: z.string().min(1).max(100).optional(),
   // Optional: left blank, the service generates a unique in-store EAN-13
   // (see shared/barcode.ts). Most garments arrive without a manufacturer
   // barcode, so auto-generation is the common path, not the exception.

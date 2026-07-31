@@ -6,6 +6,9 @@ export const createCustomerSchema = z.object({
   email: z.string().email().max(255).optional(),
   gstin: z.string().max(15).optional(),
   creditLimit: z.number().nonnegative().optional().default(0),
+  // Explicit opt-in for promotional messaging. Defaults to false: consent
+  // is never inferred from the customer having given a phone number.
+  marketingOptIn: z.boolean().optional().default(false),
 });
 export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 
@@ -15,8 +18,14 @@ export const updateCustomerSchema = z.object({
   email: z.string().email().max(255).nullable().optional(),
   gstin: z.string().max(15).nullable().optional(),
   creditLimit: z.number().nonnegative().optional(),
+  marketingOptIn: z.boolean().optional(),
 });
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+
+export const lookupCustomerQuerySchema = z.object({
+  phone: z.string().min(4).max(20),
+});
+export type LookupCustomerQuery = z.infer<typeof lookupCustomerQuerySchema>;
 
 export const listCustomersQuerySchema = z.object({
   q: z.string().optional(),

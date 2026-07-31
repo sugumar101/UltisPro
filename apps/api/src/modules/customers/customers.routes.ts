@@ -9,6 +9,7 @@ import {
   updateAddressSchema,
   chargeCustomerSchema,
   payCustomerSchema,
+  lookupCustomerQuerySchema,
 } from './customers.dto';
 import { customersService } from './customers.service';
 import { sendSuccess } from '../../shared/response-envelope';
@@ -19,6 +20,14 @@ customersRouter.get('/customers', requireAuth, async (req, res) => {
   const query = listCustomersQuerySchema.parse(req.query);
   const result = await customersService.list(req.auth!.orgId, query);
   sendSuccess(res, result.rows, 200, { page: result.page, pageSize: result.pageSize, total: result.total });
+});
+
+// Declared before /customers/:id so "lookup" isn't captured as an id.
+// Returns `null` for an unknown number rather than 404 — at the till a new
+// customer is the expected case, not an error.
+customersRouter.get('/customers/lookup', requireAuth, async (req, res) => {
+  const query = lookupCustomerQuerySchema.parse(req.query);
+  sendSuccess(res, await customersService.lookupByPhone(req.auth!.orgId, query.phone));
 });
 
 customersRouter.get('/customers/:id', requireAuth, async (req, res) => {

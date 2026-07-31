@@ -180,12 +180,11 @@ export default function ProductDetailPage() {
     setError(null);
     setMessage(null);
     try {
-      // Barcode intentionally omitted — the API generates one.
-      await addVariant(accessToken, params.id, {
-        sku: `${product?.name?.slice(0, 6).toUpperCase().replace(/\s/g, '') ?? 'SKU'}-${Date.now().toString().slice(-5)}`,
-        mrp: 0,
-        sellingPrice: 0,
-      });
+      // SKU and barcode both omitted — the API generates unique values for
+      // each, checked against the organization's existing ones. Minting a
+      // SKU client-side (as this used to) can't see other variants and so
+      // can collide.
+      await addVariant(accessToken, params.id, { mrp: 0, sellingPrice: 0 });
       await load(accessToken, params.id);
       setMessage('Variant added — edit it to set the SKU and price.');
     } catch (err) {

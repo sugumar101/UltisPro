@@ -1,9 +1,27 @@
 import { db } from '../../shared/db';
 
 export const posRepository = {
-  /** Type-ahead search by product name, SKU, or barcode, with stock at the given branch. */
+  /**
+   * Type-ahead search by product name, SKU, or barcode, with stock at the
+   * given branch.
+   *
+   * The query is tokenised on whitespace and every token must match *some*
+   * field (an AND of ORs). Matching the raw string as one `%...%` substring
+   * instead — which is what this did originally — meant "classic oversized"
+   * only matched if those words appeared adjacent and in that exact order,
+   * so a cashier typing the words in a different order, or with a stray
+   * double space, got nothing back. Tokenising makes partial, reordered and
+   * sloppily-spaced searches all work, which is the normal way someone
+   * actually types at a till.
+   *
+   * Barcode uses `ilike` too so a partially-typed or hand-keyed barcode
+   * still finds the item; exact-match scanning is handled client-side by
+   * comparing the scanned value against the returned `barcode`.
+   */
   search(organizationId: string, branchId: string, q: string) {
-    return db
+    const terms = q.trim().split(/\s+/).filter(Boolean).slice(0, 6);
+
+    let query = db
       .selectFrom('product_variants as pv')
       .innerJoin('products as p', 'p.id', 'pv.product_id')
       .leftJoin('branch_stock as bs', (join) =>
@@ -15,6 +33,7 @@ export const posRepository = {
         'pv.barcode as barcode',
         'pv.selling_price as sellingPrice',
         'pv.mrp as mrp',
+        'pv.attributes as attributes',
         'p.name as productName',
         'p.tax_id as taxId',
         'bs.quantity_on_hand as quantityOnHand',
@@ -22,11 +41,19 @@ export const posRepository = {
       .where('p.organization_id', '=', organizationId)
       .where('p.deleted_at', 'is', null)
       .where('pv.deleted_at', 'is', null)
-      .where('pv.is_active', '=', true)
-      .where((eb) => eb.or([eb('p.name', 'ilike', `%${q}%`), eb('pv.sku', 'ilike', `%${q}%`), eb('pv.barcode', '=', q)]))
-      .orderBy('p.name', 'asc')
-      .limit(20)
-      .execute();
+      .where('pv.is_active', '=', true);
+
+    for (const term of terms) {
+      query = query.where((eb) =>
+        eb.or([
+          eb('p.name', 'ilike', `%${term}%`),
+          eb('pv.sku', 'ilike', `%${term}%`),
+          eb('pv.barcode', 'ilike', `%${term}%`),
+        ]),
+      );
+    }
+
+    return query.orderBy('p.name', 'asc').orderBy('pv.sku', 'asc').limit(20).execute();
   },
 
   listHeld(organizationId: string, branchId: string) {

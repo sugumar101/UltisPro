@@ -8,6 +8,8 @@ interface CustomerWritableFields {
   email?: string | null;
   gstin?: string | null;
   credit_limit?: number;
+  marketing_opt_in?: boolean;
+  marketing_consent_at?: Date | null;
 }
 
 export const customersRepository = {
@@ -61,6 +63,30 @@ export const customersRepository = {
       .where('organization_id', '=', organizationId)
       .where('id', '=', id)
       .where('deleted_at', 'is', null)
+      .executeTakeFirst();
+  },
+
+  /**
+   * Exact lookup on the normalised phone number — the counter's "who is
+   * this?" query.
+   *
+   * Also matches rows whose stored phone merely *ends with* the normalised
+   * digits, so customers created before normalisation existed (saved as
+   * `+91 98765 43210`) are still found. Walk-in is excluded: it's a shared
+   * placeholder, not a person, and must never be returned as a recognised
+   * customer.
+   */
+  findByPhone(organizationId: string, normalizedPhone: string) {
+    return db
+      .selectFrom('customers')
+      .selectAll()
+      .where('organization_id', '=', organizationId)
+      .where('deleted_at', 'is', null)
+      .where('is_walkin', '=', false)
+      .where((eb) =>
+        eb.or([eb('phone', '=', normalizedPhone), eb('phone', 'like', `%${normalizedPhone}`)]),
+      )
+      .orderBy('created_at', 'asc')
       .executeTakeFirst();
   },
 

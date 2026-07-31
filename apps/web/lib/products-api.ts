@@ -55,10 +55,18 @@ export interface Product {
   product_category_id: string | null;
   gender: string | null;
   product_code: string | null;
+  /**
+   * Stock on hand summed across every branch, and the number of live
+   * variants. Present on list responses only (computed per page), not on
+   * `getProduct` — the detail page shows per-variant figures instead.
+   */
+  totalStock?: number;
+  variantCount?: number;
 }
 
 export interface VariantInput {
-  sku: string;
+  /** Optional — the API generates a unique readable SKU when omitted. */
+  sku?: string;
   barcode?: string;
   attributes?: Record<string, string>;
   mrp: number;

@@ -74,6 +74,36 @@ async function generateUniqueProductCode(organizationId: string): Promise<string
  * (organization_id, barcode) as the real backstop: the 10 random digits give
  * a collision probability low enough that a retry loop of 20 is generous.
  */
+/**
+ * Mints a readable, unique SKU: a short alphabetic stem taken from the
+ * product name plus a 5-digit number, e.g. `CLA-48213`. Readable matters
+ * because staff quote SKUs to each other and it's what prints under the
+ * barcode on a label — a UUID would be useless there.
+ *
+ * Same check-then-insert shape as product codes and barcodes, with the
+ * `UNIQUE (organization_id, sku)` constraint as the real backstop. Variants
+ * of one product get a suffix so a multi-variant product's SKUs are visibly
+ * related rather than unrelated random codes.
+ */
+async function generateUniqueSku(
+  organizationId: string,
+  productName: string,
+  variantSuffix?: string,
+): Promise<string> {
+  const stem =
+    productName
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '')
+      .slice(0, 3) || 'SKU';
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const serial = String(Math.floor(10000 + Math.random() * 90000));
+    const candidate = variantSuffix ? `${stem}-${serial}-${variantSuffix}` : `${stem}-${serial}`;
+    if (!(await productsRepository.existsWithSku(organizationId, candidate))) return candidate;
+  }
+  throw new AppError('CONFLICT', 'Could not generate a unique SKU right now -- please try again');
+}
+
 async function generateUniqueBarcode(organizationId: string): Promise<string> {
   for (let attempt = 0; attempt < 20; attempt++) {
     const candidate = generateEan13();
@@ -146,10 +176,12 @@ async function resolveBrandId(
   return created.id;
 }
 
-function toVariantValues(v: VariantInput, generatedBarcode?: string) {
+function toVariantValues(v: VariantInput, generatedBarcode?: string, generatedSku?: string) {
   const barcode = v.barcode?.trim() || generatedBarcode;
+  const sku = v.sku?.trim() || generatedSku;
+  if (!sku) throw new AppError('VALIDATION_ERROR', 'A SKU is required');
   return {
-    sku: v.sku,
+    sku,
     attributes: JSON.stringify(v.attributes ?? {}),
     mrp: v.mrp,
     selling_price: v.sellingPrice,
@@ -162,7 +194,22 @@ function toVariantValues(v: VariantInput, generatedBarcode?: string) {
 export const productsService = {
   async list(organizationId: string, query: ListProductsQuery) {
     const { rows, total } = await productsRepository.list(organizationId, query);
-    return { rows, total, page: query.page, pageSize: query.pageSize };
+
+    // Stock is attached per row so the catalog list can show what's actually
+    // on hand — the single most useful thing to see next to a product name,
+    // and previously only reachable by opening Inventory separately.
+    const stock = await productsRepository.stockForProducts(
+      organizationId,
+      rows.map((row) => row.id),
+    );
+
+    const withStock = rows.map((row) => ({
+      ...row,
+      totalStock: stock.get(row.id)?.totalStock ?? 0,
+      variantCount: stock.get(row.id)?.variantCount ?? 0,
+    }));
+
+    return { rows: withStock, total, page: query.page, pageSize: query.pageSize };
   },
 
   async getById(organizationId: string, id: string) {
@@ -201,9 +248,16 @@ export const productsService = {
     // uniqueness probe runs outside the transaction like the product-code
     // generator does.
     const barcodes = new Map<number, string>();
+    const skus = new Map<number, string>();
     for (const [index, variant] of input.variants.entries()) {
       if (!variant.barcode?.trim()) {
         barcodes.set(index, await generateUniqueBarcode(organizationId));
+      }
+      if (!variant.sku?.trim()) {
+        // Multi-variant products get a numeric suffix so their SKUs read as
+        // a family (CLA-48213-1, CLA-48213-2) rather than unrelated codes.
+        const suffix = input.variants.length > 1 ? String(index + 1) : undefined;
+        skus.set(index, await generateUniqueSku(organizationId, input.name, suffix));
       }
     }
 
@@ -228,7 +282,7 @@ export const productsService = {
             organizationId,
             product.id,
             actorUserId,
-            toVariantValues(variantInput, barcodes.get(index)),
+            toVariantValues(variantInput, barcodes.get(index), skus.get(index)),
           );
           variants.push(variant);
         }
@@ -457,6 +511,7 @@ export const productsService = {
     if (!product) throw new AppError('NOT_FOUND', 'Product not found');
 
     const generatedBarcode = input.barcode?.trim() ? undefined : await generateUniqueBarcode(organizationId);
+    const generatedSku = input.sku?.trim() ? undefined : await generateUniqueSku(organizationId, product.name);
 
     try {
       const variant = await db
@@ -467,7 +522,7 @@ export const productsService = {
             organizationId,
             productId,
             actorUserId,
-            toVariantValues(input, generatedBarcode),
+            toVariantValues(input, generatedBarcode, generatedSku),
           ),
         );
 

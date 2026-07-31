@@ -1,4 +1,4 @@
-import type { Transaction } from 'kysely';
+import type { ExpressionBuilder, Transaction } from 'kysely';
 import { db, type Database } from '../../shared/db';
 import type { ListSalesQuery } from './sales.dto';
 
@@ -87,30 +87,56 @@ export const salesRepository = {
       .executeTakeFirstOrThrow();
   },
 
+  /**
+   * Invoice list, joined out to the customer so the table can show who each
+   * sale was to rather than a bare `customer_id`.
+   *
+   * Joining directly into the paginated query is safe here because an
+   * invoice has at most one customer — a many-to-one join can't multiply
+   * rows, so `LIMIT` and the count stay correct. (Contrast
+   * `productsRepository.stockForProducts`, where the one-to-many shape
+   * forced a separate query.)
+   */
   async list(organizationId: string, query: ListSalesQuery) {
     let listQuery = db
-      .selectFrom('sales_invoices')
-      .selectAll()
-      .where('organization_id', '=', organizationId)
-      .where('deleted_at', 'is', null);
+      .selectFrom('sales_invoices as si')
+      .leftJoin('customers as c', 'c.id', 'si.customer_id')
+      .selectAll('si')
+      .select(['c.full_name as customerName', 'c.phone as customerPhone', 'c.is_walkin as customerIsWalkin'])
+      .where('si.organization_id', '=', organizationId)
+      .where('si.deleted_at', 'is', null);
+
+    // The count query carries the same join and the same filters — otherwise
+    // a search would return 3 rows while the pager insisted there were 200.
     let countQuery = db
-      .selectFrom('sales_invoices')
+      .selectFrom('sales_invoices as si')
+      .leftJoin('customers as c', 'c.id', 'si.customer_id')
       .select(({ fn }) => [fn.countAll<string>().as('count')])
-      .where('organization_id', '=', organizationId)
-      .where('deleted_at', 'is', null);
+      .where('si.organization_id', '=', organizationId)
+      .where('si.deleted_at', 'is', null);
 
     if (query.branchId) {
-      listQuery = listQuery.where('branch_id', '=', query.branchId);
-      countQuery = countQuery.where('branch_id', '=', query.branchId);
+      listQuery = listQuery.where('si.branch_id', '=', query.branchId);
+      countQuery = countQuery.where('si.branch_id', '=', query.branchId);
     }
     if (query.customerId) {
-      listQuery = listQuery.where('customer_id', '=', query.customerId);
-      countQuery = countQuery.where('customer_id', '=', query.customerId);
+      listQuery = listQuery.where('si.customer_id', '=', query.customerId);
+      countQuery = countQuery.where('si.customer_id', '=', query.customerId);
+    }
+    if (query.q) {
+      // Lets the sales list be searched the way staff actually look a bill
+      // up — by the customer's name or phone, or the invoice number.
+      const term = `%${query.q.trim()}%`;
+      const matches = (eb: ExpressionBuilder<Database, 'si' | 'c'>) =>
+        eb.or([eb('c.full_name', 'ilike', term), eb('c.phone', 'ilike', term), eb('si.invoice_number', 'ilike', term)]);
+
+      listQuery = listQuery.where(matches);
+      countQuery = countQuery.where(matches);
     }
 
     const [rows, countRow] = await Promise.all([
       listQuery
-        .orderBy('invoice_date', 'desc')
+        .orderBy('si.invoice_date', 'desc')
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize)
         .execute(),

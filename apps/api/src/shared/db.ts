@@ -487,6 +487,9 @@ export interface CustomersTable {
   outstanding_balance: Generated<Numeric>;
   loyalty_points: Generated<number>;
   is_walkin: Generated<boolean>;
+  /** Promotional messaging consent (migration 0012). Never inferred from having a phone number. */
+  marketing_opt_in: Generated<boolean>;
+  marketing_consent_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   updated_at: Generated<Timestamp>;
   created_by: string | null;

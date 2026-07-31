@@ -22,6 +22,7 @@ import {
 } from '../../../lib/products-api';
 import { ApiError } from '../../../lib/api-client';
 
+// SKU and barcode intentionally blank — both are auto-generated server-side.
 const EMPTY_VARIANT: VariantInput = { sku: '', barcode: '', mrp: 0, sellingPrice: 0, purchasePrice: 0, reorderLevel: 0 };
 
 export default function NewProductPage() {
@@ -81,6 +82,10 @@ export default function NewProductPage() {
       setError('Name, unit, and at least one variant are required.');
       return;
     }
+    if (variants.some((v) => Number(v.sellingPrice) <= 0)) {
+      setError('Every variant needs a selling price above zero.');
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -96,7 +101,7 @@ export default function NewProductPage() {
         hasVariants: variants.length > 1,
         trackBatches,
         variants: variants.map((v) => ({
-          sku: v.sku,
+          sku: v.sku?.trim() || undefined,
           barcode: v.barcode || undefined,
           mrp: Number(v.mrp),
           sellingPrice: Number(v.sellingPrice),
@@ -232,7 +237,8 @@ export default function NewProductPage() {
           <div>
             <h2 className="font-title-sm text-title-sm">Variants (SKUs)</h2>
             <p className="text-xs text-on-surface-variant">
-              Leave Barcode blank and a scannable in-store EAN-13 is generated for each variant.
+              Leave SKU and Barcode blank — a unique SKU and a scannable in-store EAN-13 are generated for each
+              variant.
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={addVariant}>
@@ -243,7 +249,11 @@ export default function NewProductPage() {
           {variants.map((v, i) => (
             <div key={i} className="grid grid-cols-1 gap-3 rounded border border-outline-variant p-4 md:grid-cols-6">
               <FormField label="SKU">
-                <Input value={v.sku} onChange={(e) => updateVariant(i, { sku: e.target.value })} />
+                <Input
+                  placeholder="Auto-generated"
+                  value={v.sku ?? ''}
+                  onChange={(e) => updateVariant(i, { sku: e.target.value })}
+                />
               </FormField>
               <FormField label="Barcode">
                 <Input

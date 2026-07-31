@@ -1,4 +1,4 @@
-import type { Transaction } from 'kysely';
+import { sql, type Transaction } from 'kysely';
 import { db, type Database } from '../../shared/db';
 import type { ListProductsQuery } from './products.dto';
 
@@ -69,6 +69,41 @@ export const productsRepository = {
     return { rows, total: Number(countRow?.count ?? 0) };
   },
 
+  /**
+   * Stock on hand and live variant count for a set of products, summed
+   * across every branch.
+   *
+   * Deliberately a second query rather than a join into `list()` above: a
+   * product joins to N variants which join to M branch_stock rows, so
+   * folding it into the paginated query would multiply rows and break both
+   * `LIMIT` and the total count. Running it over just the current page's ids
+   * keeps it to one extra round trip regardless of catalog size.
+   */
+  async stockForProducts(organizationId: string, productIds: string[]) {
+    if (productIds.length === 0) return new Map<string, { totalStock: number; variantCount: number }>();
+
+    const rows = await db
+      .selectFrom('product_variants as pv')
+      .leftJoin('branch_stock as bs', 'bs.product_variant_id', 'pv.id')
+      .select(({ fn }) => [
+        'pv.product_id as productId',
+        fn.sum<string>(fn.coalesce('bs.quantity_on_hand', sql<number>`0`)).as('totalStock'),
+        fn.count<string>('pv.id').distinct().as('variantCount'),
+      ])
+      .where('pv.organization_id', '=', organizationId)
+      .where('pv.product_id', 'in', productIds)
+      .where('pv.deleted_at', 'is', null)
+      .groupBy('pv.product_id')
+      .execute();
+
+    return new Map(
+      rows.map((row) => [
+        row.productId,
+        { totalStock: Number(row.totalStock ?? 0), variantCount: Number(row.variantCount ?? 0) },
+      ]),
+    );
+  },
+
   findById(organizationId: string, id: string) {
     return db
       .selectFrom('products')
@@ -97,6 +132,17 @@ export const productsRepository = {
    * concerned, so ignoring deleted rows here would hand back a barcode that
    * then fails to insert.
    */
+  /** SKU collision check. Ignores `deleted_at` for the same reason as barcodes — the UNIQUE constraint doesn't. */
+  async existsWithSku(organizationId: string, sku: string): Promise<boolean> {
+    const row = await db
+      .selectFrom('product_variants')
+      .select('id')
+      .where('organization_id', '=', organizationId)
+      .where('sku', '=', sku)
+      .executeTakeFirst();
+    return row !== undefined;
+  },
+
   async existsWithBarcode(organizationId: string, barcode: string): Promise<boolean> {
     const row = await db
       .selectFrom('product_variants')

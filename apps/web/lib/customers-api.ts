@@ -10,7 +10,14 @@ export interface Customer {
   outstanding_balance: string;
   loyalty_points: number;
   is_walkin: boolean;
+  /** Consent for promotional messaging — never assumed from having a phone number. */
+  marketing_opt_in?: boolean;
+  marketing_consent_at?: string | null;
 }
+
+/** Looks a customer up by phone. Resolves to null when the number is unknown. */
+export const lookupCustomerByPhone = (token: string, phone: string) =>
+  apiFetch<Customer | null>(`/api/v1/customers/lookup?phone=${encodeURIComponent(phone)}`, {}, token);
 
 export interface CustomerAddress {
   id: string;
@@ -52,7 +59,14 @@ export const getCustomer = (token: string, id: string) =>
 
 export const createCustomer = (
   token: string,
-  input: { fullName: string; phone?: string; email?: string; gstin?: string; creditLimit?: number },
+  input: {
+    fullName: string;
+    phone?: string;
+    email?: string;
+    gstin?: string;
+    creditLimit?: number;
+    marketingOptIn?: boolean;
+  },
 ) => apiFetch<Customer>('/api/v1/customers', { method: 'POST', body: JSON.stringify(input) }, token);
 
 export const updateCustomer = (

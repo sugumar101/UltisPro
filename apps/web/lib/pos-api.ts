@@ -7,8 +7,16 @@ export interface PosSearchResult {
   sellingPrice: string;
   mrp: string;
   productName: string;
+  /** e.g. `{ size: 'XL', color: 'White' }` — distinguishes variants sharing a product name. */
+  attributes: Record<string, string> | null;
   taxId: string | null;
   quantityOnHand: string | null;
+}
+
+/** "XL · White" from a variant's attributes, or empty when it has none. */
+export function describeVariant(attributes: Record<string, string> | null | undefined): string {
+  if (!attributes) return '';
+  return [attributes.size, attributes.color].filter(Boolean).join(' · ');
 }
 
 export interface CartLine {
@@ -19,6 +27,14 @@ export interface CartLine {
   unitPrice: number;
   discountAmount: number;
   taxId?: string;
+  /**
+   * Stock on hand at the selling branch when the line was added. Client-side
+   * only — it exists so the cashier can be warned *before* checkout that a
+   * line will be rejected, rather than after they've collected payment. The
+   * server re-checks stock inside the checkout transaction regardless; this
+   * is a UX guard, never the source of truth.
+   */
+  availableStock?: number;
 }
 
 export interface HeldBill {

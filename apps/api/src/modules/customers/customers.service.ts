@@ -1,6 +1,7 @@
 import { db } from '../../shared/db';
 import { AppError } from '../../shared/app-error';
 import { recordAudit } from '../../shared/audit-log.service';
+import { normalizePhone } from '../../shared/phone';
 import { customersRepository } from './customers.repository';
 import type {
   CreateCustomerInput,
@@ -32,14 +33,43 @@ export const customersService = {
     return { customer, addresses };
   },
 
+  /**
+   * Counter lookup: "who owns this number?". Returns null rather than 404
+   * for an unknown number — at the till that's the *expected* case for a new
+   * customer, not an error condition, and the POS branches on it directly.
+   */
+  async lookupByPhone(organizationId: string, phone: string) {
+    const normalized = normalizePhone(phone);
+    if (!normalized) return null;
+    return (await customersRepository.findByPhone(organizationId, normalized)) ?? null;
+  },
+
   async create(organizationId: string, actorUserId: string, input: CreateCustomerInput) {
+    // Stored normalised so the same person typed three different ways is one
+    // customer, not three.
+    const phone = input.phone !== undefined ? normalizePhone(input.phone) : undefined;
+
+    // Reuse an existing record rather than tripping the unique constraint —
+    // at a busy counter "this number is already taken" is a dead end, while
+    // returning the known customer is exactly what the cashier wanted.
+    if (phone) {
+      const existing = await customersRepository.findByPhone(organizationId, phone);
+      if (existing) return existing;
+    }
+
     try {
       const customer = await customersRepository.create(organizationId, actorUserId, {
         full_name: input.fullName,
         credit_limit: input.creditLimit,
-        ...(input.phone !== undefined && { phone: input.phone }),
+        ...(phone !== undefined && { phone }),
         ...(input.email !== undefined && { email: input.email }),
         ...(input.gstin !== undefined && { gstin: input.gstin }),
+        ...(input.marketingOptIn !== undefined && {
+          marketing_opt_in: input.marketingOptIn,
+          // Timestamp the consent, since "we have consent" is only
+          // defensible if you can say when it was given.
+          marketing_consent_at: input.marketingOptIn ? new Date() : null,
+        }),
       });
       await recordAudit({
         organizationId,
@@ -63,10 +93,16 @@ export const customersService = {
     try {
       const updated = await customersRepository.update(organizationId, id, actorUserId, {
         ...(input.fullName !== undefined && { full_name: input.fullName }),
-        ...(input.phone !== undefined && { phone: input.phone }),
+        ...(input.phone !== undefined && { phone: input.phone === null ? null : normalizePhone(input.phone) }),
         ...(input.email !== undefined && { email: input.email }),
         ...(input.gstin !== undefined && { gstin: input.gstin }),
         ...(input.creditLimit !== undefined && { credit_limit: input.creditLimit }),
+        ...(input.marketingOptIn !== undefined && {
+          marketing_opt_in: input.marketingOptIn,
+          // Re-stamp on grant; clear on withdrawal so a stale date can't
+          // later be mistaken for current consent.
+          marketing_consent_at: input.marketingOptIn ? new Date() : null,
+        }),
       });
       await recordAudit({
         organizationId,

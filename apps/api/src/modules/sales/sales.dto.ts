@@ -23,12 +23,18 @@ export const createSaleSchema = z.object({
   registerCode: z.string().max(20).optional(),
   items: z.array(saleItemInputSchema).min(1, 'At least one line item is required'),
   payments: z.array(paymentInputSchema).optional().default([]),
+  // A discount applied to the whole bill at the till ("take ₹50 off"),
+  // distinct from the per-line discounts above. Prorated across lines
+  // before tax by the service so GST stays correct — see sales.service.ts.
+  billDiscountAmount: z.number().nonnegative().optional().default(0),
 });
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
 
 export const listSalesQuerySchema = z.object({
   branchId: z.string().uuid().optional(),
   customerId: z.string().uuid().optional(),
+  /** Free-text over customer name, customer phone, or invoice number. */
+  q: z.string().max(100).optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(20),
 });

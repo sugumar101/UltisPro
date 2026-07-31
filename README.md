@@ -44,6 +44,8 @@ From there, **Products > New product** creates a product with one or more SKU va
 
 **Customers > New customer** (a "Walk-in Customer" already exists from signup) lets you set a credit limit, then charge/record payments against their account from the customer detail page — charges that would exceed the credit limit are rejected, proving Phase 4's exit criteria.
 
+At the till, typing a customer's **mobile number** recognises a returning customer instantly (and shows any outstanding balance); an unknown number lets you capture their name plus an explicit opt-in for offers, saved when the sale completes. After checkout you can send the bill straight to them on WhatsApp.
+
 **POS** is the main event: search for a product (add stock first via Inventory if you haven't), it lands in the cart, adjust qty/price/discount inline, pick a customer (defaults to Walk-in), split payment across cash/card/UPI/etc., and check out — this writes a real invoice with a sequential number, decrements stock, charges any shortfall to the customer's account, and pops a printable receipt (toggle auto-print off in the payment panel if you'd rather print manually). **Sales** lists every invoice; open one to see its items/payments, reprint it as an 80mm receipt or A4 GST tax invoice, or return it (restores stock, credits the customer).
 
 For printing: any printer installed on the machine works, including thermal printers — the 80mm template sets its own page size and the printer driver handles the rest. Choosing "Save as PDF" in the print dialog gives you an archivable invoice copy.

@@ -14,6 +14,10 @@ export interface SalesInvoice {
   grand_total: string;
   amount_paid: string;
   cashier_id: string | null;
+  /** Joined from the customer on list responses; absent on single-invoice fetches. */
+  customerName?: string | null;
+  customerPhone?: string | null;
+  customerIsWalkin?: boolean | null;
 }
 
 export interface SalesInvoiceItem {
@@ -58,6 +62,8 @@ export interface CreateSaleInput {
   registerCode?: string;
   items: SaleItemInput[];
   payments: PaymentInput[];
+  /** Whole-bill discount; the API prorates it across lines before tax. */
+  billDiscountAmount?: number;
 }
 
 export interface ListSalesResult {
@@ -67,11 +73,12 @@ export interface ListSalesResult {
 
 export async function listSales(
   token: string,
-  params: { branchId?: string; customerId?: string; page?: number } = {},
+  params: { branchId?: string; customerId?: string; q?: string; page?: number } = {},
 ): Promise<ListSalesResult> {
   const search = new URLSearchParams();
   if (params.branchId) search.set('branchId', params.branchId);
   if (params.customerId) search.set('customerId', params.customerId);
+  if (params.q) search.set('q', params.q);
   if (params.page) search.set('page', String(params.page));
 
   const envelope = await apiFetchEnvelope<SalesInvoice[]>(`/api/v1/sales?${search.toString()}`, {}, token);
