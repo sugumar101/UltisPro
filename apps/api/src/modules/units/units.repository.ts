@@ -3,7 +3,9 @@ import { db } from '../../shared/db';
 interface UnitWritableFields {
   name: string;
   symbol: string;
-  base_unit_id?: string;
+  // Nullable so an update can detach a unit from its base unit; `undefined`
+  // means "leave unchanged".
+  base_unit_id?: string | null;
   conversion_factor?: number;
 }
 

@@ -13,6 +13,7 @@ import {
 } from './customers.dto';
 import { customersService } from './customers.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const customersRouter = Router();
 
@@ -31,7 +32,7 @@ customersRouter.get('/customers/lookup', requireAuth, async (req, res) => {
 });
 
 customersRouter.get('/customers/:id', requireAuth, async (req, res) => {
-  sendSuccess(res, await customersService.getById(req.auth!.orgId, req.params.id));
+  sendSuccess(res, await customersService.getById(req.auth!.orgId, param(req, 'id')));
 });
 
 customersRouter.post(
@@ -51,7 +52,7 @@ customersRouter.patch(
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
     const input = updateCustomerSchema.parse(req.body);
-    const customer = await customersService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const customer = await customersService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, customer);
   },
 );
@@ -61,7 +62,7 @@ customersRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
-    await customersService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await customersService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );
@@ -72,7 +73,7 @@ customersRouter.post(
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
     const input = chargeCustomerSchema.parse(req.body);
-    const customer = await customersService.charge(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const customer = await customersService.charge(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, customer);
   },
 );
@@ -83,7 +84,7 @@ customersRouter.post(
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
     const input = payCustomerSchema.parse(req.body);
-    const customer = await customersService.recordPayment(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const customer = await customersService.recordPayment(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, customer);
   },
 );
@@ -94,7 +95,7 @@ customersRouter.post(
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
     const input = createAddressSchema.parse(req.body);
-    const address = await customersService.addAddress(req.auth!.orgId, req.params.id, input);
+    const address = await customersService.addAddress(req.auth!.orgId, param(req, 'id'), input);
     sendSuccess(res, address, 201);
   },
 );
@@ -105,7 +106,7 @@ customersRouter.patch(
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
     const input = updateAddressSchema.parse(req.body);
-    const address = await customersService.updateAddress(req.auth!.orgId, req.params.id, req.params.addressId, input);
+    const address = await customersService.updateAddress(req.auth!.orgId, param(req, 'id'), param(req, 'addressId'), input);
     sendSuccess(res, address);
   },
 );
@@ -115,7 +116,7 @@ customersRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.CUSTOMERS_MANAGE),
   async (req, res) => {
-    await customersService.removeAddress(req.auth!.orgId, req.params.id, req.params.addressId);
+    await customersService.removeAddress(req.auth!.orgId, param(req, 'id'), param(req, 'addressId'));
     sendSuccess(res, { deleted: true });
   },
 );

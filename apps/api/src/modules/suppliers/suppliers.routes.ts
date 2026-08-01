@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { createSupplierSchema, updateSupplierSchema, createSupplierPaymentSchema } from './suppliers.dto';
 import { suppliersService } from './suppliers.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const suppliersRouter = Router();
 
@@ -12,7 +13,7 @@ suppliersRouter.get('/suppliers', requireAuth, async (req, res) => {
 });
 
 suppliersRouter.get('/suppliers/:id', requireAuth, async (req, res) => {
-  sendSuccess(res, await suppliersService.getById(req.auth!.orgId, req.params.id));
+  sendSuccess(res, await suppliersService.getById(req.auth!.orgId, param(req, 'id')));
 });
 
 suppliersRouter.post(
@@ -32,7 +33,7 @@ suppliersRouter.patch(
   requirePermission(PERMISSIONS.SUPPLIERS_MANAGE),
   async (req, res) => {
     const input = updateSupplierSchema.parse(req.body);
-    const supplier = await suppliersService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const supplier = await suppliersService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, supplier);
   },
 );
@@ -42,7 +43,7 @@ suppliersRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.SUPPLIERS_MANAGE),
   async (req, res) => {
-    await suppliersService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await suppliersService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );
@@ -53,7 +54,7 @@ suppliersRouter.post(
   requirePermission(PERMISSIONS.SUPPLIERS_MANAGE),
   async (req, res) => {
     const input = createSupplierPaymentSchema.parse(req.body);
-    const payment = await suppliersService.recordPayment(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const payment = await suppliersService.recordPayment(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, payment, 201);
   },
 );

@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import type { ExpressionBuilder, Transaction } from 'kysely';
+import type { Transaction } from 'kysely';
 import { db, type Database } from '../../shared/db';
 import type { ListSalesQuery } from './sales.dto';
 
@@ -129,11 +129,19 @@ export const salesRepository = {
       // Lets the sales list be searched the way staff actually look a bill
       // up — by the customer's name or phone, or the invoice number.
       const term = `%${query.q.trim()}%`;
-      const matches = (eb: ExpressionBuilder<Database, 'si' | 'c'>) =>
-        eb.or([eb('c.full_name', 'ilike', term), eb('c.phone', 'ilike', term), eb('si.invoice_number', 'ilike', term)]);
 
-      listQuery = listQuery.where(matches);
-      countQuery = countQuery.where(matches);
+      // Written inline for each query rather than shared through one typed
+      // callback: the list and count builders have different generic
+      // parameters (the list selects columns, the count aggregates), so a
+      // single `ExpressionBuilder<Database, 'si' | 'c'>` signature can't
+      // satisfy both. Duplicating three predicates is cheaper than fighting
+      // that — and the comment above keeps the pair from drifting.
+      listQuery = listQuery.where((eb) =>
+        eb.or([eb('c.full_name', 'ilike', term), eb('c.phone', 'ilike', term), eb('si.invoice_number', 'ilike', term)]),
+      );
+      countQuery = countQuery.where((eb) =>
+        eb.or([eb('c.full_name', 'ilike', term), eb('c.phone', 'ilike', term), eb('si.invoice_number', 'ilike', term)]),
+      );
     }
 
     const [rows, countRow] = await Promise.all([

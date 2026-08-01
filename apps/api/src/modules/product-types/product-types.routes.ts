@@ -10,6 +10,7 @@ import {
 } from './product-types.dto';
 import { productTypesService, productCategoriesService } from './product-types.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const productTypesRouter = Router();
 
@@ -34,7 +35,7 @@ productTypesRouter.patch(
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
     const input = updateProductTypeSchema.parse(req.body);
-    const type = await productTypesService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const type = await productTypesService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, type);
   },
 );
@@ -44,7 +45,7 @@ productTypesRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
-    await productTypesService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await productTypesService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );
@@ -71,7 +72,7 @@ productTypesRouter.patch(
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
     const input = updateProductCategorySchema.parse(req.body);
-    const category = await productCategoriesService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const category = await productCategoriesService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, category);
   },
 );
@@ -81,7 +82,7 @@ productTypesRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
-    await productCategoriesService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await productCategoriesService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );

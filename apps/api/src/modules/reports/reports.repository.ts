@@ -107,8 +107,12 @@ export const reportsRepository = {
       ])
       .where('po.organization_id', '=', organizationId)
       .where('po.deleted_at', 'is', null)
-      .where('po.order_date', '>=', new Date(fromDate))
-      .where('po.order_date', '<=', new Date(toDate))
+      // `order_date` is a DATE column, which pg represents as a
+      // 'YYYY-MM-DD' string. `fromDate`/`toDate` already arrive in that form
+      // from the report DTO, so wrapping them in `new Date()` only converted
+      // a correct value into the wrong type.
+      .where('po.order_date', '>=', fromDate)
+      .where('po.order_date', '<=', toDate)
       .execute();
   },
 

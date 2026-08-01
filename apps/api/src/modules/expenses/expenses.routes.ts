@@ -10,6 +10,7 @@ import {
 } from './expenses.dto';
 import { expenseCategoriesService, expensesService } from './expenses.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const expensesRouter = Router();
 
@@ -34,7 +35,7 @@ expensesRouter.patch(
   requirePermission(PERMISSIONS.EXPENSES_MANAGE),
   async (req, res) => {
     const input = updateExpenseCategorySchema.parse(req.body);
-    const category = await expenseCategoriesService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const category = await expenseCategoriesService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, category);
   },
 );
@@ -44,7 +45,7 @@ expensesRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.EXPENSES_MANAGE),
   async (req, res) => {
-    await expenseCategoriesService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await expenseCategoriesService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );
@@ -56,7 +57,7 @@ expensesRouter.get('/expenses', requireAuth, async (req, res) => {
 });
 
 expensesRouter.get('/expenses/:id', requireAuth, async (req, res) => {
-  sendSuccess(res, await expensesService.getById(req.auth!.orgId, req.params.id));
+  sendSuccess(res, await expensesService.getById(req.auth!.orgId, param(req, 'id')));
 });
 
 expensesRouter.post('/expenses', requireAuth, requirePermission(PERMISSIONS.EXPENSES_MANAGE), async (req, res) => {
@@ -71,7 +72,7 @@ expensesRouter.patch(
   requirePermission(PERMISSIONS.EXPENSES_MANAGE),
   async (req, res) => {
     const input = updateExpenseSchema.parse(req.body);
-    const expense = await expensesService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const expense = await expensesService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, expense);
   },
 );
@@ -81,7 +82,7 @@ expensesRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.EXPENSES_MANAGE),
   async (req, res) => {
-    await expensesService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await expensesService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );

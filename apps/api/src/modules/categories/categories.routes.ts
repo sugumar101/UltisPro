@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { createCategorySchema, updateCategorySchema } from './categories.dto';
 import { categoriesService } from './categories.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const categoriesRouter = Router();
 
@@ -28,7 +29,7 @@ categoriesRouter.patch(
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
     const input = updateCategorySchema.parse(req.body);
-    const category = await categoriesService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const category = await categoriesService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, category);
   },
 );
@@ -38,7 +39,7 @@ categoriesRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
-    await categoriesService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await categoriesService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );

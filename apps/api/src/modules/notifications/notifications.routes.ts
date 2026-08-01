@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth } from '../auth/rbac.middleware';
 import { notificationsService } from './notifications.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const notificationsRouter = Router();
 
@@ -14,6 +15,6 @@ notificationsRouter.get('/notifications', requireAuth, async (req, res) => {
 });
 
 notificationsRouter.post('/notifications/:id/read', requireAuth, async (req, res) => {
-  const notification = await notificationsService.markRead(req.auth!.orgId, req.params.id, req.auth!.sub);
+  const notification = await notificationsService.markRead(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
   sendSuccess(res, notification);
 });

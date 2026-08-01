@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { posSearchQuerySchema, holdBillSchema } from './pos.dto';
 import { posService } from './pos.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const posRouter = Router();
 
@@ -32,7 +33,7 @@ posRouter.post(
   requireAuth,
   requirePermission(PERMISSIONS.SALES_CREATE),
   async (req, res) => {
-    const held = await posService.resume(req.auth!.orgId, req.params.id);
+    const held = await posService.resume(req.auth!.orgId, param(req, 'id'));
     sendSuccess(res, held);
   },
 );

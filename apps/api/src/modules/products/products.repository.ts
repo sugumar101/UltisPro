@@ -8,9 +8,11 @@ interface ProductWritableFields {
   has_variants?: boolean;
   track_batches?: boolean;
   description?: string;
-  category_id?: string;
-  brand_id?: string;
-  tax_id?: string;
+  // Nullable: the update DTO allows clearing these, so `null` is a
+  // meaningful value distinct from "leave unchanged" (undefined).
+  category_id?: string | null;
+  brand_id?: string | null;
+  tax_id?: string | null;
   hsn_code?: string;
   // Clothing product flow only (docs/03-database-design.md §19) -- left
   // undefined for every product created via the generic create() path.

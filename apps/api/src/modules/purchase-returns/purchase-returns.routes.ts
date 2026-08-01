@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { createPurchaseReturnSchema } from '../purchase-orders/purchase-orders.dto';
 import { purchaseReturnsService } from './purchase-returns.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const purchaseReturnsRouter = Router();
 
@@ -12,7 +13,7 @@ purchaseReturnsRouter.get('/purchase-returns', requireAuth, async (req, res) => 
 });
 
 purchaseReturnsRouter.get('/purchase-returns/:id', requireAuth, async (req, res) => {
-  sendSuccess(res, await purchaseReturnsService.getById(req.auth!.orgId, req.params.id));
+  sendSuccess(res, await purchaseReturnsService.getById(req.auth!.orgId, param(req, 'id')));
 });
 
 purchaseReturnsRouter.post(

@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { inviteUserSchema, updateUserSchema, assignStoreRoleSchema } from './users.dto';
 import { usersService } from './users.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const usersRouter = Router();
 
@@ -19,13 +20,13 @@ usersRouter.post('/users', requireAuth, requirePermission(PERMISSIONS.USERS_MANA
 });
 
 usersRouter.get('/users/:id', requireAuth, requirePermission(PERMISSIONS.USERS_MANAGE), async (req, res) => {
-  const result = await usersService.getById(req.auth!.orgId, req.params.id);
+  const result = await usersService.getById(req.auth!.orgId, param(req, 'id'));
   sendSuccess(res, result);
 });
 
 usersRouter.patch('/users/:id', requireAuth, requirePermission(PERMISSIONS.USERS_MANAGE), async (req, res) => {
   const input = updateUserSchema.parse(req.body);
-  const user = await usersService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+  const user = await usersService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
   sendSuccess(res, user);
 });
 
@@ -35,7 +36,7 @@ usersRouter.post(
   requirePermission(PERMISSIONS.USERS_MANAGE),
   async (req, res) => {
     const input = assignStoreRoleSchema.parse(req.body);
-    const assignment = await usersService.assignStoreRole(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const assignment = await usersService.assignStoreRole(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, assignment, 201);
   },
 );
@@ -45,7 +46,7 @@ usersRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.USERS_MANAGE),
   async (req, res) => {
-    await usersService.removeStoreRole(req.auth!.orgId, req.params.id, req.auth!.sub, req.params.branchId);
+    await usersService.removeStoreRole(req.auth!.orgId, param(req, 'id'), req.auth!.sub, param(req, 'branchId'));
     sendSuccess(res, { removed: true });
   },
 );

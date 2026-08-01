@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { createUnitSchema, updateUnitSchema } from './units.dto';
 import { unitsService } from './units.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const unitsRouter = Router();
 
@@ -19,11 +20,11 @@ unitsRouter.post('/units', requireAuth, requirePermission(PERMISSIONS.PRODUCTS_M
 
 unitsRouter.patch('/units/:id', requireAuth, requirePermission(PERMISSIONS.PRODUCTS_MANAGE), async (req, res) => {
   const input = updateUnitSchema.parse(req.body);
-  const unit = await unitsService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+  const unit = await unitsService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
   sendSuccess(res, unit);
 });
 
 unitsRouter.delete('/units/:id', requireAuth, requirePermission(PERMISSIONS.PRODUCTS_MANAGE), async (req, res) => {
-  await unitsService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+  await unitsService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
   sendSuccess(res, { deleted: true });
 });

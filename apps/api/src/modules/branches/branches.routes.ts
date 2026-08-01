@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { createBranchSchema, updateBranchSchema } from './branches.dto';
 import { branchesService } from './branches.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const branchesRouter = Router();
 
@@ -13,7 +14,7 @@ branchesRouter.get('/branches', requireAuth, async (req, res) => {
 });
 
 branchesRouter.get('/stores/:storeId/branches', requireAuth, async (req, res) => {
-  const branches = await branchesService.listByStore(req.auth!.orgId, req.params.storeId);
+  const branches = await branchesService.listByStore(req.auth!.orgId, param(req, 'storeId'));
   sendSuccess(res, branches);
 });
 
@@ -23,13 +24,13 @@ branchesRouter.post(
   requirePermission(PERMISSIONS.SETTINGS_MANAGE),
   async (req, res) => {
     const input = createBranchSchema.parse(req.body);
-    const branch = await branchesService.create(req.auth!.orgId, req.params.storeId, req.auth!.sub, input);
+    const branch = await branchesService.create(req.auth!.orgId, param(req, 'storeId'), req.auth!.sub, input);
     sendSuccess(res, branch, 201);
   },
 );
 
 branchesRouter.get('/branches/:id', requireAuth, async (req, res) => {
-  const branch = await branchesService.getById(req.auth!.orgId, req.params.id);
+  const branch = await branchesService.getById(req.auth!.orgId, param(req, 'id'));
   sendSuccess(res, branch);
 });
 
@@ -39,7 +40,7 @@ branchesRouter.patch(
   requirePermission(PERMISSIONS.SETTINGS_MANAGE),
   async (req, res) => {
     const input = updateBranchSchema.parse(req.body);
-    const branch = await branchesService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const branch = await branchesService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, branch);
   },
 );

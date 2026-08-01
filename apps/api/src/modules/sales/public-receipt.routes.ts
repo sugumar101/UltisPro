@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { salesService } from './sales.service';
 import { sendSuccess } from '../../shared/response-envelope';
 import { rateLimit } from '../../shared/rate-limit.middleware';
+import { param } from '../../shared/route-params';
 
 /**
  * The one **unauthenticated** router in the application: it serves a single
@@ -29,6 +30,6 @@ const receiptLimiter = rateLimit({
 });
 
 publicReceiptRouter.get('/public/receipt/:token', receiptLimiter, async (req, res) => {
-  const receipt = await salesService.getPublicReceipt(req.params.token);
+  const receipt = await salesService.getPublicReceipt(param(req, 'token'));
   sendSuccess(res, receipt);
 });

@@ -10,6 +10,7 @@ import {
 } from './inventory.dto';
 import { inventoryService } from './inventory.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const inventoryRouter = Router();
 
@@ -90,7 +91,7 @@ inventoryRouter.post(
   requireAuth,
   requirePermission(PERMISSIONS.INVENTORY_TRANSFER),
   async (req, res) => {
-    const transfer = await inventoryService.receiveTransfer(req.auth!.orgId, req.params.id, req.auth!.sub);
+    const transfer = await inventoryService.receiveTransfer(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, transfer);
   },
 );

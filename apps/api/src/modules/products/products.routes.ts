@@ -12,6 +12,7 @@ import {
 } from './products.dto';
 import { productsService } from './products.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const productsRouter = Router();
 
@@ -39,7 +40,7 @@ productsRouter.post(
 );
 
 productsRouter.get('/products/:id', requireAuth, requirePermission(PERMISSIONS.PRODUCTS_VIEW), async (req, res) => {
-  const result = await productsService.getById(req.auth!.orgId, req.params.id);
+  const result = await productsService.getById(req.auth!.orgId, param(req, 'id'));
   sendSuccess(res, result);
 });
 
@@ -49,7 +50,7 @@ productsRouter.patch(
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
     const input = updateProductSchema.parse(req.body);
-    const product = await productsService.update(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const product = await productsService.update(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, product);
   },
 );
@@ -59,7 +60,7 @@ productsRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
-    await productsService.remove(req.auth!.orgId, req.params.id, req.auth!.sub);
+    await productsService.remove(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );
@@ -70,7 +71,7 @@ productsRouter.post(
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
     const input = createVariantSchema.parse(req.body);
-    const variant = await productsService.addVariant(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const variant = await productsService.addVariant(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, variant, 201);
   },
 );
@@ -81,7 +82,7 @@ productsRouter.patch(
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
     const input = updateVariantSchema.parse(req.body);
-    const variant = await productsService.updateVariant(req.auth!.orgId, req.params.variantId, req.auth!.sub, input);
+    const variant = await productsService.updateVariant(req.auth!.orgId, param(req, 'variantId'), req.auth!.sub, input);
     sendSuccess(res, variant);
   },
 );
@@ -91,7 +92,7 @@ productsRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
-    await productsService.removeVariant(req.auth!.orgId, req.params.id, req.params.variantId, req.auth!.sub);
+    await productsService.removeVariant(req.auth!.orgId, param(req, 'id'), param(req, 'variantId'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );
@@ -104,7 +105,7 @@ productsRouter.post(
     const input = attachImageSchema.parse(req.body);
     const image = await productsService.addImage(
       req.auth!.orgId,
-      req.params.id,
+      param(req, 'id'),
       req.auth!.sub,
       input.s3Key,
       input.sortOrder,
@@ -118,7 +119,7 @@ productsRouter.delete(
   requireAuth,
   requirePermission(PERMISSIONS.PRODUCTS_MANAGE),
   async (req, res) => {
-    await productsService.removeImage(req.auth!.orgId, req.params.id, req.params.imageId, req.auth!.sub);
+    await productsService.removeImage(req.auth!.orgId, param(req, 'id'), param(req, 'imageId'), req.auth!.sub);
     sendSuccess(res, { deleted: true });
   },
 );

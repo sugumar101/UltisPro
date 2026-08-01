@@ -4,6 +4,7 @@ import { requireAuth, requirePermission } from '../auth/rbac.middleware';
 import { createPurchaseOrderSchema, receivePurchaseOrderSchema } from './purchase-orders.dto';
 import { purchaseOrdersService } from './purchase-orders.service';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const purchaseOrdersRouter = Router();
 
@@ -12,7 +13,7 @@ purchaseOrdersRouter.get('/purchase-orders', requireAuth, async (req, res) => {
 });
 
 purchaseOrdersRouter.get('/purchase-orders/:id', requireAuth, async (req, res) => {
-  sendSuccess(res, await purchaseOrdersService.getById(req.auth!.orgId, req.params.id));
+  sendSuccess(res, await purchaseOrdersService.getById(req.auth!.orgId, param(req, 'id')));
 });
 
 purchaseOrdersRouter.post(
@@ -31,7 +32,7 @@ purchaseOrdersRouter.post(
   requireAuth,
   requirePermission(PERMISSIONS.PURCHASE_ORDERS_APPROVE),
   async (req, res) => {
-    const order = await purchaseOrdersService.approve(req.auth!.orgId, req.params.id, req.auth!.sub);
+    const order = await purchaseOrdersService.approve(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, order);
   },
 );
@@ -42,7 +43,7 @@ purchaseOrdersRouter.post(
   requirePermission(PERMISSIONS.PURCHASE_ORDERS_MANAGE),
   async (req, res) => {
     const input = receivePurchaseOrderSchema.parse(req.body);
-    const order = await purchaseOrdersService.receive(req.auth!.orgId, req.params.id, req.auth!.sub, input);
+    const order = await purchaseOrdersService.receive(req.auth!.orgId, param(req, 'id'), req.auth!.sub, input);
     sendSuccess(res, order);
   },
 );
@@ -52,7 +53,7 @@ purchaseOrdersRouter.post(
   requireAuth,
   requirePermission(PERMISSIONS.PURCHASE_ORDERS_MANAGE),
   async (req, res) => {
-    const order = await purchaseOrdersService.cancel(req.auth!.orgId, req.params.id, req.auth!.sub);
+    const order = await purchaseOrdersService.cancel(req.auth!.orgId, param(req, 'id'), req.auth!.sub);
     sendSuccess(res, order);
   },
 );

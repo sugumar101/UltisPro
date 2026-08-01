@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../auth/rbac.middleware';
 import { rolesRepository } from './roles.repository';
 import { sendSuccess } from '../../shared/response-envelope';
+import { param } from '../../shared/route-params';
 
 export const rolesRouter = Router();
 
@@ -14,7 +15,7 @@ rolesRouter.get('/roles', requireAuth, async (req, res) => {
 });
 
 rolesRouter.get('/roles/:id/permissions', requireAuth, async (req, res) => {
-  const permissions = await rolesRepository.listPermissionsForRole(req.params.id);
+  const permissions = await rolesRepository.listPermissionsForRole(param(req, 'id'));
   sendSuccess(res, permissions);
 });
 
