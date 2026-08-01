@@ -154,7 +154,12 @@ export const inventoryRepository = {
       ])
       .where('p.organization_id', '=', organizationId)
       .where('b.expiry_date', 'is not', null)
-      .where('b.expiry_date', '<=', new Date(Date.now() + withinDays * 24 * 60 * 60 * 1000))
+      // `expiry_date` is a DATE column, which pg returns (and compares) as a
+      // 'YYYY-MM-DD' string — passing a JS Date here is a type error and
+      // would rely on driver coercion. Formatting explicitly also drops the
+      // time component, so "expiring within N days" means whole days rather
+      // than "N days from this exact instant".
+      .where('b.expiry_date', '<=', new Date(Date.now() + withinDays * 86_400_000).toISOString().slice(0, 10))
       .orderBy('b.expiry_date', 'asc')
       .execute();
   },

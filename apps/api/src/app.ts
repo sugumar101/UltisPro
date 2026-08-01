@@ -27,6 +27,7 @@ import { purchaseOrdersRouter } from './modules/purchase-orders/purchase-orders.
 import { purchaseReturnsRouter } from './modules/purchase-returns/purchase-returns.routes';
 import { customersRouter } from './modules/customers/customers.routes';
 import { salesRouter } from './modules/sales/sales.routes';
+import { publicReceiptRouter } from './modules/sales/public-receipt.routes';
 import { posRouter } from './modules/pos/pos.routes';
 import { dashboardRouter } from './modules/dashboard/dashboard.routes';
 import { reportsRouter } from './modules/reports/reports.routes';
@@ -120,6 +121,12 @@ export function createApp(): Express {
   );
 
   app.use(healthRouter);
+
+  // Unauthenticated by design — a customer opening their own bill link has
+  // no account. Mounted separately from /api/v1 so the boundary between
+  // "requires a token" and "requires a login" is visible at a glance.
+  app.use('/api/v1', publicReceiptRouter);
+
   app.use('/api/v1', authRouter);
   app.use('/api/v1', organizationsRouter);
   app.use('/api/v1', storesRouter);

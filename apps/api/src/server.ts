@@ -5,8 +5,19 @@ import { pool } from './shared/db';
 
 const app = createApp();
 
-const server = app.listen(env.API_PORT, () => {
-  logger.info(`UltisPro API listening on port ${env.API_PORT} (${env.NODE_ENV})`);
+/**
+ * Managed platforms (Railway, Render, Fly, Heroku) assign a port via `PORT`
+ * and expect the process to bind it — a hardcoded port means the health
+ * check never passes and the deploy is marked failed.
+ *
+ * Binding `0.0.0.0` rather than the default is equally load-bearing: inside
+ * a container, listening on localhost makes the service unreachable from the
+ * platform's router, which presents as a timeout rather than a clear error.
+ */
+const port = Number(process.env.PORT) || env.API_PORT;
+
+const server = app.listen(port, '0.0.0.0', () => {
+  logger.info(`UltisPro API listening on port ${port} (${env.NODE_ENV})`);
 });
 
 async function shutdown(signal: string): Promise<void> {

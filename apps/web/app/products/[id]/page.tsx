@@ -10,6 +10,7 @@ import { Button } from '../../../components/ui/button';
 import { Input } from '../../../components/ui/input';
 import { FormField } from '../../../components/ui/form-field';
 import { Barcode } from '../../../components/ui/barcode';
+import { openAppWindow } from '../../../lib/app-url';
 import { useRequireAuth } from '../../../lib/hooks/use-require-auth';
 import { hasPermission } from '../../../lib/stores/auth-store';
 import {
@@ -225,7 +226,7 @@ export default function ProductDetailPage() {
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
               <Button
                 variant="secondary"
-                onClick={() => window.open(`/products/barcodes?ids=${product.id}`, '_blank')}
+                onClick={() => openAppWindow(`/products/barcodes?ids=${product.id}`)}
               >
                 <Printer className="h-4 w-4" />
                 Print barcodes

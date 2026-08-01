@@ -11,6 +11,7 @@ import { Input } from '../../components/ui/input';
 import { useRequireAuth } from '../../lib/hooks/use-require-auth';
 import { hasPermission } from '../../lib/stores/auth-store';
 import { listProducts, deleteProduct, type Product } from '../../lib/products-api';
+import { openAppWindow } from '../../lib/app-url';
 import { ApiError } from '../../lib/api-client';
 
 export default function ProductsPage() {
@@ -41,7 +42,7 @@ export default function ProductsPage() {
 
   function openBarcodes(ids: string[]) {
     if (ids.length === 0) return;
-    window.open(`/products/barcodes?ids=${ids.join(',')}`, '_blank');
+    openAppWindow(`/products/barcodes?ids=${ids.join(',')}`);
   }
 
   async function load(token: string) {

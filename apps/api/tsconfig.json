@@ -4,8 +4,32 @@
     "outDir": "dist",
     "rootDir": ".",
     "baseUrl": ".",
-    "types": ["node"]
+    "types": ["node"],
+
+    /*
+     * Relaxed relative to tsconfig.base.json, for one specific reason:
+     * Express types `req.params` as an index signature, so under
+     * `noUncheckedIndexedAccess` every `req.params.id` widens to
+     * `string | undefined` — roughly 30 call sites where the value is in
+     * fact structurally guaranteed by the route pattern (`/products/:id`
+     * cannot match without an `id`).
+     *
+     * The flag's real value is catching unchecked *array* indexing, which
+     * this codebase does very little of and which the remaining strict
+     * flags plus code review cover. Paying for it with 30 non-null
+     * assertions on route params would add noise and, worse, train the
+     * habit of writing `!` — which would eventually be applied somewhere it
+     * actually matters.
+     *
+     * `strict: true` and every other check from the base config stay on.
+     */
+    "noUncheckedIndexedAccess": false
   },
-  "include": ["src", "scripts"],
-  "exclude": ["node_modules", "dist", "test"]
+  /*
+   * `scripts/` holds developer tooling run through tsx (migrate, loadtest),
+   * not application code that ships. Compiling them into dist/ isn't needed
+   * and made the production build fail on a load-test helper.
+   */
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "test", "scripts"]
 }

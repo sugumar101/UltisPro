@@ -27,7 +27,13 @@ export interface AccessTokenPayload {
 }
 
 export function signAccessToken(payload: AccessTokenPayload): string {
-  return jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_ACCESS_TTL });
+  // `expiresIn` is typed as a `ms`-style template literal union
+  // (`"15m"`, `"7d"`, …) rather than a plain string, so a value read from
+  // the environment can't satisfy it statically. The cast is confined to
+  // this one option; an invalid value fails loudly at sign time rather than
+  // silently issuing a non-expiring token.
+  const options: jwt.SignOptions = { expiresIn: env.JWT_ACCESS_TTL as jwt.SignOptions['expiresIn'] };
+  return jwt.sign(payload, env.JWT_SECRET, options);
 }
 
 export function verifyAccessToken(token: string): AccessTokenPayload {

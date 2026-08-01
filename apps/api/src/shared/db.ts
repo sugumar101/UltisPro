@@ -8,6 +8,17 @@ import { env } from '../config/env';
  * domain (docs/04-module-breakdown.md M1/M2/M3).
  */
 
+/**
+ * TIMESTAMPTZ columns. Insert already permits `undefined`, so a column with
+ * a DB default uses this type directly.
+ *
+ * **Do not wrap these in `Generated<>`.** `Generated<T>` is itself a
+ * `ColumnType`, so `Timestamp` nests one ColumnType inside
+ * another and Kysely stops unwrapping it — the select type degrades from
+ * `Date` to the raw ColumnType, which then leaks into query operand types
+ * and produces errors far from the declaration (the dashboard's
+ * `invoice_date` comparison was one). Same rule applies to `Numeric` below.
+ */
 type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 
 /**
@@ -16,6 +27,13 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
  * number or a string, since service-layer code mostly deals in numbers.
  */
 type Numeric = ColumnType<string, number | string, number | string>;
+
+/**
+ * NUMERIC column carrying a database default, so it may be omitted on
+ * insert. This is what `NumericDefault` was trying to express — see the
+ * nesting note on `Timestamp`.
+ */
+type NumericDefault = ColumnType<string, number | string | undefined, number | string>;
 
 export interface OrganizationsTable {
   id: Generated<string>;
@@ -26,8 +44,8 @@ export interface OrganizationsTable {
   timezone: Generated<string>;
   subscription_plan: Generated<string>;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   deleted_at: Timestamp | null;
 }
 
@@ -37,15 +55,15 @@ export interface StoresTable {
   name: string;
   gstin: string | null;
   invoice_prefix: Generated<string>;
-  next_invoice_seq: Generated<Numeric>;
+  next_invoice_seq: NumericDefault;
   address_line1: string | null;
   address_line2: string | null;
   city: string | null;
   state: string | null;
   postal_code: string | null;
   country: Generated<string>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -63,8 +81,8 @@ export interface BranchesTable {
   postal_code: string | null;
   phone: string | null;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -77,8 +95,8 @@ export interface WarehousesTable {
   name: string;
   code: string;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   deleted_at: Timestamp | null;
 }
 
@@ -93,8 +111,8 @@ export interface UsersTable {
   last_login_at: Timestamp | null;
   failed_login_count: Generated<number>;
   locked_until: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -105,8 +123,8 @@ export interface RolesTable {
   organization_id: string | null;
   name: string;
   is_system: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   deleted_at: Timestamp | null;
 }
 
@@ -128,7 +146,7 @@ export interface UserStoreRolesTable {
   user_id: string;
   branch_id: string;
   role_id: string;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 export interface RefreshTokensTable {
@@ -138,7 +156,7 @@ export interface RefreshTokensTable {
   family_id: string;
   expires_at: Timestamp;
   revoked_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 export interface PasswordResetTokensTable {
@@ -147,7 +165,7 @@ export interface PasswordResetTokensTable {
   token_hash: string;
   expires_at: Timestamp;
   used_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 export interface AuditLogsTable {
@@ -160,7 +178,7 @@ export interface AuditLogsTable {
   before_data: unknown;
   after_data: unknown;
   ip_address: string | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 // --- Phase 2: Catalog (docs/03-database-design.md §5, changelog §12) ---
@@ -170,8 +188,8 @@ export interface CategoriesTable {
   organization_id: string;
   parent_id: string | null;
   name: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -181,8 +199,8 @@ export interface BrandsTable {
   id: Generated<string>;
   organization_id: string;
   name: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -194,9 +212,9 @@ export interface UnitsTable {
   name: string;
   symbol: string;
   base_unit_id: string | null;
-  conversion_factor: Generated<Numeric>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  conversion_factor: NumericDefault;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -207,11 +225,11 @@ export interface TaxesTable {
   organization_id: string;
   name: string;
   rate_percent: Numeric;
-  cgst_percent: Generated<Numeric>;
-  sgst_percent: Generated<Numeric>;
-  igst_percent: Generated<Numeric>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  cgst_percent: NumericDefault;
+  sgst_percent: NumericDefault;
+  igst_percent: NumericDefault;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -238,8 +256,8 @@ export interface ProductsTable {
   product_category_id: string | null;
   gender: string | null;
   product_code: string | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -262,8 +280,8 @@ export interface ProductTypesTable {
   /** Inherited by products created under this type when no HSN is entered (migration 0011). */
   default_hsn_code: string | null;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -275,8 +293,8 @@ export interface ProductCategoriesTable {
   product_type_id: string;
   name: string;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -292,11 +310,11 @@ export interface ProductVariantsTable {
   attributes: ColumnType<Record<string, string>, string, string>;
   mrp: Numeric;
   selling_price: Numeric;
-  purchase_price: Generated<Numeric>;
+  purchase_price: NumericDefault;
   reorder_level: Generated<number>;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -307,7 +325,7 @@ export interface ProductImagesTable {
   product_id: string;
   s3_key: string;
   sort_order: Generated<number>;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 // --- Phase 2: Inventory (docs/03-database-design.md §6) ---
@@ -320,7 +338,7 @@ export interface BatchesTable {
   manufactured_date: string | null;
   expiry_date: string | null;
   purchase_price: Numeric | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 export interface BranchStockTable {
@@ -329,9 +347,9 @@ export interface BranchStockTable {
   branch_id: string;
   product_variant_id: string;
   batch_id: string | null;
-  quantity_on_hand: Generated<Numeric>;
-  quantity_reserved: Generated<Numeric>;
-  updated_at: Generated<Timestamp>;
+  quantity_on_hand: NumericDefault;
+  quantity_reserved: NumericDefault;
+  updated_at: Timestamp;
 }
 
 export interface StockLedgerTable {
@@ -346,7 +364,7 @@ export interface StockLedgerTable {
   quantity_delta: Numeric;
   balance_after: Numeric;
   unit_cost: Numeric | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   created_by: string | null;
 }
 
@@ -357,7 +375,7 @@ export interface StockAdjustmentsTable {
   reason_code: string;
   notes: string | null;
   approved_by: string | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   created_by: string | null;
 }
 
@@ -375,7 +393,7 @@ export interface StockTransfersTable {
   from_branch_id: string;
   to_branch_id: string;
   status: Generated<string>;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   created_by: string | null;
   completed_at: Timestamp | null;
 }
@@ -398,10 +416,10 @@ export interface SuppliersTable {
   phone: string | null;
   email: string | null;
   payment_terms_days: Generated<number>;
-  outstanding_balance: Generated<Numeric>;
+  outstanding_balance: NumericDefault;
   is_active: Generated<boolean>;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -416,10 +434,10 @@ export interface PurchaseOrdersTable {
   status: Generated<string>;
   order_date: Generated<string>;
   expected_date: string | null;
-  subtotal: Generated<Numeric>;
-  tax_total: Generated<Numeric>;
-  grand_total: Generated<Numeric>;
-  created_at: Generated<Timestamp>;
+  subtotal: NumericDefault;
+  tax_total: NumericDefault;
+  grand_total: NumericDefault;
+  created_at: Timestamp;
   created_by: string | null;
   approved_by: string | null;
   approved_at: Timestamp | null;
@@ -431,7 +449,7 @@ export interface PurchaseOrderItemsTable {
   purchase_order_id: string;
   product_variant_id: string;
   quantity_ordered: Numeric;
-  quantity_received: Generated<Numeric>;
+  quantity_received: NumericDefault;
   unit_cost: Numeric;
   tax_id: string | null;
   line_total: Numeric;
@@ -442,8 +460,8 @@ export interface PurchaseReturnsTable {
   organization_id: string;
   purchase_order_id: string;
   reason: string | null;
-  grand_total: Generated<Numeric>;
-  created_at: Generated<Timestamp>;
+  grand_total: NumericDefault;
+  created_at: Timestamp;
   created_by: string | null;
 }
 
@@ -463,7 +481,7 @@ export interface SupplierPaymentsTable {
   purchase_order_id: string | null;
   amount: Numeric;
   payment_mode: string;
-  paid_at: Generated<Timestamp>;
+  paid_at: Timestamp;
   created_by: string | null;
 }
 
@@ -483,15 +501,15 @@ export interface CustomersTable {
   phone: string | null;
   email: string | null;
   gstin: string | null;
-  credit_limit: Generated<Numeric>;
-  outstanding_balance: Generated<Numeric>;
+  credit_limit: NumericDefault;
+  outstanding_balance: NumericDefault;
   loyalty_points: Generated<number>;
   is_walkin: Generated<boolean>;
   /** Promotional messaging consent (migration 0012). Never inferred from having a phone number. */
   marketing_opt_in: Generated<boolean>;
   marketing_consent_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -518,7 +536,7 @@ export interface HeldBillsTable {
   customer_id: string | null;
   /** JSONB — always write JSON.stringify(obj); reads back as a parsed object. */
   cart_snapshot: ColumnType<unknown, string, string>;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   created_by: string | null;
 }
 
@@ -529,17 +547,23 @@ export interface SalesInvoicesTable {
   branch_id: string;
   customer_id: string | null;
   invoice_number: string;
-  invoice_date: Generated<Timestamp>;
+  invoice_date: Timestamp;
   status: Generated<string>;
   subtotal: Numeric;
-  discount_total: Generated<Numeric>;
-  tax_total: Generated<Numeric>;
+  discount_total: NumericDefault;
+  tax_total: NumericDefault;
   grand_total: Numeric;
-  amount_paid: Generated<Numeric>;
+  amount_paid: NumericDefault;
   register_code: string | null;
   cashier_id: string | null;
   pdf_s3_key: string | null;
-  created_at: Generated<Timestamp>;
+  /**
+   * Unguessable token backing the public bill link (migration 0014). Null on
+   * invoices predating that migration. Treat as a bearer credential: anyone
+   * holding it can read this one receipt.
+   */
+  public_token: string | null;
+  created_at: Timestamp;
   deleted_at: Timestamp | null;
 }
 
@@ -550,9 +574,9 @@ export interface SalesInvoiceItemsTable {
   batch_id: string | null;
   quantity: Numeric;
   unit_price: Numeric;
-  discount_amount: Generated<Numeric>;
+  discount_amount: NumericDefault;
   tax_id: string | null;
-  tax_amount: Generated<Numeric>;
+  tax_amount: NumericDefault;
   line_total: Numeric;
 }
 
@@ -563,7 +587,7 @@ export interface SalesReturnsTable {
   credit_note_number: string;
   reason: string | null;
   grand_total: Numeric;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   created_by: string | null;
 }
 
@@ -583,7 +607,7 @@ export interface PaymentsTable {
   amount: Numeric;
   payment_mode: string;
   reference_no: string | null;
-  paid_at: Generated<Timestamp>;
+  paid_at: Timestamp;
   created_by: string | null;
 }
 
@@ -593,8 +617,8 @@ export interface ExpenseCategoriesTable {
   id: Generated<string>;
   organization_id: string;
   name: string;
-  created_at: Generated<Timestamp>;
-  updated_at: Generated<Timestamp>;
+  created_at: Timestamp;
+  updated_at: Timestamp;
   created_by: string | null;
   updated_by: string | null;
   deleted_at: Timestamp | null;
@@ -610,7 +634,7 @@ export interface ExpensesTable {
   notes: string | null;
   attachment_s3_key: string | null;
   expense_date: Generated<string>;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
   created_by: string | null;
   deleted_at: Timestamp | null;
 }
@@ -627,14 +651,14 @@ export interface NotificationsTable {
   reference_table: string | null;
   reference_id: string | null;
   read_at: Timestamp | null;
-  created_at: Generated<Timestamp>;
+  created_at: Timestamp;
 }
 
 export interface Database {
   schema_migrations: {
     id: Generated<number>;
     name: string;
-    applied_at: Generated<Timestamp>;
+    applied_at: Timestamp;
   };
   organizations: OrganizationsTable;
   stores: StoresTable;

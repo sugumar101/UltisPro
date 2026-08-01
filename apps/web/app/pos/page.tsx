@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Printer, MessageSquare, Mail, Send } from 'lucide-react';
 import { DashboardShell } from '../../components/layout/dashboard-shell';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
@@ -8,7 +9,14 @@ import { Input } from '../../components/ui/input';
 import { FormField } from '../../components/ui/form-field';
 import { useRequireAuth } from '../../lib/hooks/use-require-auth';
 import { listBranches, getOrganization, type Branch } from '../../lib/settings-api';
-import { shareOnWhatsApp, buildReceiptMessage } from '../../lib/whatsapp';
+import {
+  sendOnWhatsApp,
+  sendOverSms,
+  sendOverEmail,
+  buildBillUrl,
+  type ShareResult,
+} from '../../lib/share-bill';
+import { openAppWindow } from '../../lib/app-url';
 import { listCustomers, lookupCustomerByPhone, createCustomer, type Customer } from '../../lib/customers-api';
 import { listTaxes, type Tax } from '../../lib/products-api';
 import {
@@ -43,6 +51,7 @@ export default function PosPage() {
   // name and the record is created at checkout.
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [matchedCustomer, setMatchedCustomer] = useState<Customer | null>(null);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [lookingUp, setLookingUp] = useState(false);
@@ -73,8 +82,24 @@ export default function PosPage() {
     invoiceNumber: string;
     grandTotal: string;
     customerPhone: string | null;
+    customerEmail: string | null;
+    customerName: string | null;
+    publicToken: string | null;
   } | null>(null);
-  const [autoPrint, setAutoPrint] = useState(true);
+  /**
+   * How this bill should reach the customer, chosen *before* checkout.
+   *
+   * Nothing is ever sent unless the cashier ticks it here — a shop that
+   * prints receipts should never find itself silently messaging customers.
+   * Printing stays on by default because that's the existing behaviour; the
+   * three digital channels default off and are the point of the feature:
+   * for customers who'd rather have the bill on their phone, tick a channel
+   * and skip the paper entirely.
+   */
+  const [deliverByPrint, setDeliverByPrint] = useState(true);
+  const [deliverBySms, setDeliverBySms] = useState(false);
+  const [deliverByWhatsApp, setDeliverByWhatsApp] = useState(false);
+  const [deliverByEmail, setDeliverByEmail] = useState(false);
 
   useEffect(() => {
     if (!ready || !accessToken) return;
@@ -205,6 +230,12 @@ export default function PosPage() {
     return tax ? Number(tax.rate_percent) : 0;
   }
 
+  // Which digital channels are actually usable for this sale. A channel
+  // without its contact detail is disabled rather than hidden, so the
+  // cashier can see it exists and why it isn't available.
+  const hasPhone = Boolean((customerPhone.trim() || matchedCustomer?.phone || '').replace(/\D/g, '').length >= 7);
+  const hasEmail = Boolean((customerEmail.trim() || matchedCustomer?.email || '').includes('@'));
+
   // Lines the server will reject at checkout. Computed from the stock read
   // at add time, so it's advisory — the authoritative check runs inside the
   // checkout transaction.
@@ -252,9 +283,17 @@ export default function PosPage() {
     // them by mistake.
     setCustomerPhone('');
     setCustomerName('');
+    setCustomerEmail('');
     setMatchedCustomer(null);
     setCustomerId('');
     setMarketingOptIn(false);
+    // Delivery choices are per-sale: the next customer may not want, or may
+    // not have given contact details for, the channels the last one used.
+    // Print keeps its default so a paper-receipt shop isn't re-ticking it
+    // all day.
+    setDeliverBySms(false);
+    setDeliverByWhatsApp(false);
+    setDeliverByEmail(false);
     // Hand focus back to the scan box so the next customer can be rung up
     // without touching the mouse.
     searchRef.current?.focus();
@@ -279,12 +318,14 @@ export default function PosPage() {
       if (found) {
         setCustomerId(found.id);
         setCustomerName(found.full_name);
+        setCustomerEmail(found.email ?? '');
         setMarketingOptIn(Boolean(found.marketing_opt_in));
       } else {
         // Unknown number: fall back to walk-in until a name is entered, so
         // the sale can still complete if the customer declines to give one.
         setCustomerId('');
         setCustomerName('');
+        setCustomerEmail('');
         setMarketingOptIn(false);
       }
     } catch {
@@ -313,6 +354,7 @@ export default function PosPage() {
     const created = await createCustomer(accessToken, {
       fullName: name,
       phone,
+      email: customerEmail.trim() || undefined,
       marketingOptIn,
     });
     setMatchedCustomer(created);
@@ -328,7 +370,105 @@ export default function PosPage() {
    */
   function openReceipt(invoiceId: string, auto: boolean) {
     const query = auto ? '?auto=1' : '';
-    window.open(`/sales/${invoiceId}/print${query}`, '_blank', 'width=420,height=700');
+    openAppWindow(`/sales/${invoiceId}/print${query}`, 'width=420,height=700');
+  }
+
+  /**
+   * Acts on the delivery channels ticked before checkout.
+   *
+   * Only ticked channels fire — nothing is ever sent implicitly. Channels
+   * are staggered rather than triggered together: each one hands off to a
+   * different external app (print dialog, SMS composer, mail client,
+   * WhatsApp), and firing them in the same tick means the OS drops all but
+   * the last. A short gap lets each handler take focus in turn.
+   */
+  function deliverBill(sale: {
+    invoiceId: string;
+    invoiceNumber: string;
+    grandTotal: string;
+    publicToken: string | null;
+    phone: string | null;
+    email: string | null;
+    name: string | null;
+  }): void {
+    const details = sale.publicToken
+      ? {
+          storeName: orgName || 'our store',
+          invoiceNumber: sale.invoiceNumber,
+          grandTotal: sale.grandTotal,
+          billUrl: buildBillUrl(sale.publicToken),
+          customerName: sale.name,
+        }
+      : null;
+
+    const failures: string[] = [];
+    const queue: (() => void)[] = [];
+
+    if (deliverByPrint) queue.push(() => openReceipt(sale.invoiceId, true));
+
+    if (deliverBySms) {
+      queue.push(() => {
+        const result = details
+          ? sendOverSms(sale.phone, details)
+          : ({ ok: false, reason: 'No shareable bill link.' } as ShareResult);
+        if (!result.ok) failures.push(`SMS: ${result.reason}`);
+      });
+    }
+
+    if (deliverByWhatsApp) {
+      queue.push(() => {
+        const result = details
+          ? sendOnWhatsApp(sale.phone, details)
+          : ({ ok: false, reason: 'No shareable bill link.' } as ShareResult);
+        if (!result.ok) failures.push(`WhatsApp: ${result.reason}`);
+      });
+    }
+
+    if (deliverByEmail) {
+      queue.push(() => {
+        const result = details
+          ? sendOverEmail(sale.email, details)
+          : ({ ok: false, reason: 'No shareable bill link.' } as ShareResult);
+        if (!result.ok) failures.push(`Email: ${result.reason}`);
+      });
+    }
+
+    queue.forEach((run, index) => setTimeout(run, index * 600));
+
+    // Reported after the queue has run, so the cashier learns a channel was
+    // skipped instead of assuming the customer got their bill.
+    if (queue.length > 0) {
+      setTimeout(() => {
+        if (failures.length > 0) setError(`Bill not sent — ${failures.join('; ')}`);
+      }, queue.length * 600);
+    }
+  }
+
+  /**
+   * Shared plumbing for the three send channels: builds the thank-you
+   * message around the public bill link and surfaces any reason the send
+   * couldn't start (missing number, malformed email) instead of failing
+   * silently.
+   */
+  function shareBill(
+    send: (contact: string | null, details: Parameters<typeof sendOnWhatsApp>[1]) => ShareResult,
+    contact: string | null,
+  ) {
+    if (!lastSale?.publicToken) {
+      setError('This sale has no shareable bill link.');
+      return;
+    }
+
+    const result = send(contact, {
+      storeName: orgName || 'our store',
+      invoiceNumber: lastSale.invoiceNumber,
+      grandTotal: lastSale.grandTotal,
+      billUrl: buildBillUrl(lastSale.publicToken),
+      customerName: lastSale.customerName,
+    });
+
+    if (!result.ok) setError(result.reason);
+    else setError(null);
   }
 
   async function handleCheckout() {
@@ -354,14 +494,26 @@ export default function PosPage() {
         billDiscountAmount: appliedBillDiscount > 0 ? appliedBillDiscount : undefined,
       });
       setMessage(`Sale completed: invoice ${result.invoice.invoice_number} (total ₹${result.invoice.grand_total}).`);
+      // Captured before resetCart() clears the customer fields.
       setLastSale({
         id: result.invoice.id,
         invoiceNumber: result.invoice.invoice_number,
         grandTotal: result.invoice.grand_total,
         customerPhone: customerPhone.trim() || matchedCustomer?.phone || null,
+        customerEmail: customerEmail.trim() || matchedCustomer?.email || null,
+        customerName: customerName.trim() || matchedCustomer?.full_name || null,
+        publicToken: result.invoice.public_token ?? null,
       });
       resetCart();
-      if (autoPrint) openReceipt(result.invoice.id, true);
+      deliverBill({
+        invoiceId: result.invoice.id,
+        invoiceNumber: result.invoice.invoice_number,
+        grandTotal: result.invoice.grand_total,
+        publicToken: result.invoice.public_token ?? null,
+        phone: customerPhone.trim() || matchedCustomer?.phone || null,
+        email: customerEmail.trim() || matchedCustomer?.email || null,
+        name: customerName.trim() || matchedCustomer?.full_name || null,
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Checkout failed');
     } finally {
@@ -447,11 +599,22 @@ export default function PosPage() {
           </FormField>
           <FormField label={matchedCustomer ? 'Customer' : 'Name (new customer)'}>
             <Input
-              className="w-44"
+              className="w-40"
               placeholder={lookingUp ? 'Looking up…' : 'Customer name'}
               value={customerName}
               disabled={Boolean(matchedCustomer)}
               onChange={(e) => setCustomerName(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Email (optional)">
+            <Input
+              className="w-48"
+              type="email"
+              inputMode="email"
+              placeholder="For emailing the bill"
+              value={customerEmail}
+              disabled={Boolean(matchedCustomer)}
+              onChange={(e) => setCustomerEmail(e.target.value)}
             />
           </FormField>
         </div>
@@ -497,35 +660,90 @@ export default function PosPage() {
       {message ? <p className="mt-4 text-sm text-green-700">{message}</p> : null}
 
       {lastSale ? (
-        <div className="mt-4 flex items-center gap-3 rounded border border-outline-variant bg-surface-container-low p-3">
-          <span className="text-body-md">
-            Last sale: <span className="font-mono-data font-semibold">{lastSale.invoiceNumber}</span>
-          </span>
-          <Button size="sm" variant="secondary" onClick={() => openReceipt(lastSale.id, false)}>
-            Print receipt
-          </Button>
-          {lastSale.customerPhone ? (
+        <div className="mt-4 animate-fade-in rounded-md border border-success/30 bg-success-container p-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="text-body-md font-semibold text-on-success-container">
+              Sale complete — {lastSale.invoiceNumber}
+            </span>
+            <span className="text-body-md text-on-success-container">₹{lastSale.grandTotal}</span>
+          </div>
+
+          <p className="mt-1 text-xs text-on-success-container/80">
+            Whatever you ticked before checkout has been sent. Use these to resend, or to add a channel you
+            didn&apos;t select.
+          </p>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => openReceipt(lastSale.id, false)}>
+              <Printer className="h-4 w-4" />
+              Print receipt
+            </Button>
+
+            {/* Each channel is disabled when its contact detail is missing,
+                with the reason in the tooltip — a button that silently does
+                nothing is worse than one that explains itself. */}
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => {
-                const sent = shareOnWhatsApp(
-                  lastSale.customerPhone,
-                  buildReceiptMessage({
-                    storeName: orgName || 'our store',
-                    invoiceNumber: lastSale.invoiceNumber,
-                    grandTotal: lastSale.grandTotal,
-                  }),
-                );
-                if (!sent) setError('That phone number does not look valid for WhatsApp.');
-              }}
+              disabled={!lastSale.customerPhone || !lastSale.publicToken}
+              title={!lastSale.customerPhone ? 'No mobile number captured for this sale' : undefined}
+              onClick={() => shareBill(sendOverSms, lastSale.customerPhone)}
             >
-              Send on WhatsApp
+              <MessageSquare className="h-4 w-4" />
+              Message bill
             </Button>
+
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!lastSale.customerEmail || !lastSale.publicToken}
+              title={!lastSale.customerEmail ? 'No email captured for this sale' : undefined}
+              onClick={() => shareBill(sendOverEmail, lastSale.customerEmail)}
+            >
+              <Mail className="h-4 w-4" />
+              Email bill
+            </Button>
+
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!lastSale.customerPhone || !lastSale.publicToken}
+              title={!lastSale.customerPhone ? 'No mobile number captured for this sale' : undefined}
+              onClick={() => shareBill(sendOnWhatsApp, lastSale.customerPhone)}
+            >
+              <Send className="h-4 w-4" />
+              WhatsApp bill
+            </Button>
+
+            <Button size="sm" variant="ghost" onClick={() => openAppWindow(`/sales/${lastSale.id}`)}>
+              View invoice
+            </Button>
+          </div>
+
+          {/* The bill link, always visible and copyable. SMS/email deep links
+              do nothing on a desktop till with no mail or SMS handler
+              registered, so there has to be a way to get the link out by
+              hand. */}
+          {lastSale.publicToken ? (
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                readOnly
+                className="field-base h-8 flex-1 font-mono-data text-xs"
+                value={buildBillUrl(lastSale.publicToken)}
+                onFocus={(e) => e.target.select()}
+              />
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(buildBillUrl(lastSale.publicToken!));
+                  setMessage('Bill link copied.');
+                }}
+              >
+                Copy link
+              </Button>
+            </div>
           ) : null}
-          <Button size="sm" variant="secondary" onClick={() => window.open(`/sales/${lastSale.id}`, '_blank')}>
-            View invoice
-          </Button>
         </div>
       ) : null}
 
@@ -776,10 +994,69 @@ export default function PosPage() {
                   ₹{shortfall > 0.01 ? shortfall.toFixed(2) : amountPaid.toFixed(2)}
                 </span>
               </div>
-              <label className="flex items-center gap-2 text-sm text-on-surface-variant">
-                <input type="checkbox" checked={autoPrint} onChange={(e) => setAutoPrint(e.target.checked)} />
-                Print receipt automatically after checkout
-              </label>
+              <div className="rounded-md border border-outline-variant bg-surface-container-low p-3">
+                <p className="mb-2 text-label-sm font-semibold text-on-surface-variant">Send bill to customer</p>
+
+                <label className="flex items-center gap-2 py-0.5 text-sm text-on-surface">
+                  <input
+                    type="checkbox"
+                    checked={deliverByPrint}
+                    onChange={(e) => setDeliverByPrint(e.target.checked)}
+                  />
+                  Print receipt
+                </label>
+
+                <label
+                  className={`flex items-center gap-2 py-0.5 text-sm ${
+                    hasPhone ? 'text-on-surface' : 'cursor-not-allowed text-on-surface-variant/50'
+                  }`}
+                  title={hasPhone ? undefined : 'Enter a customer mobile number first'}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!hasPhone}
+                    checked={deliverBySms && hasPhone}
+                    onChange={(e) => setDeliverBySms(e.target.checked)}
+                  />
+                  Message (SMS)
+                </label>
+
+                <label
+                  className={`flex items-center gap-2 py-0.5 text-sm ${
+                    hasPhone ? 'text-on-surface' : 'cursor-not-allowed text-on-surface-variant/50'
+                  }`}
+                  title={hasPhone ? undefined : 'Enter a customer mobile number first'}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!hasPhone}
+                    checked={deliverByWhatsApp && hasPhone}
+                    onChange={(e) => setDeliverByWhatsApp(e.target.checked)}
+                  />
+                  WhatsApp
+                </label>
+
+                <label
+                  className={`flex items-center gap-2 py-0.5 text-sm ${
+                    hasEmail ? 'text-on-surface' : 'cursor-not-allowed text-on-surface-variant/50'
+                  }`}
+                  title={hasEmail ? undefined : 'Enter a customer email first'}
+                >
+                  <input
+                    type="checkbox"
+                    disabled={!hasEmail}
+                    checked={deliverByEmail && hasEmail}
+                    onChange={(e) => setDeliverByEmail(e.target.checked)}
+                  />
+                  Email
+                </label>
+
+                {!deliverByPrint && !deliverBySms && !deliverByWhatsApp && !deliverByEmail ? (
+                  <p className="mt-2 text-xs text-warning">
+                    No delivery selected — the customer won&apos;t receive a bill. You can still send it afterwards.
+                  </p>
+                ) : null}
+              </div>
               {understockedLines.length > 0 ? (
                 <p className="rounded border border-error/30 bg-error-container px-3 py-2 text-xs text-on-error-container">
                   Not enough stock for {understockedLines.map((l) => l.sku).join(', ')}. Add stock in Inventory, or

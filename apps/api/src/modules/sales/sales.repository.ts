@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import type { ExpressionBuilder, Transaction } from 'kysely';
 import { db, type Database } from '../../shared/db';
 import type { ListSalesQuery } from './sales.dto';
@@ -38,6 +39,7 @@ export const salesRepository = {
       amount_paid: number;
       register_code: string | null;
       cashier_id: string;
+      public_token: string;
     },
   ) {
     return trx
@@ -152,6 +154,22 @@ export const salesRepository = {
       .selectAll()
       .where('organization_id', '=', organizationId)
       .where('id', '=', id)
+      .where('deleted_at', 'is', null)
+      .executeTakeFirst();
+  },
+
+  /**
+   * Looks an invoice up by its public token, with no organization scope —
+   * the token itself is the credential. Deliberately the only query in the
+   * codebase that reads a tenant row without an `organization_id` filter,
+   * which is why it lives here alone and is called from exactly one place
+   * (the unauthenticated receipt endpoint).
+   */
+  findByPublicToken(token: string) {
+    return db
+      .selectFrom('sales_invoices')
+      .selectAll()
+      .where('public_token', '=', token)
       .where('deleted_at', 'is', null)
       .executeTakeFirst();
   },
@@ -281,6 +299,17 @@ export const salesRepository = {
       .executeTakeFirstOrThrow();
   },
 };
+
+/**
+ * 32 bytes of CSPRNG output as base64url — ~43 URL-safe characters.
+ *
+ * `randomBytes`, not `Math.random()`: this token is the sole credential
+ * protecting a customer's bill, and `Math.random()` is predictable enough
+ * that observing a few outputs can reveal the generator state.
+ */
+export function generatePublicToken(): string {
+  return randomBytes(32).toString('base64url');
+}
 
 export function generateCreditNoteNumber(): string {
   // Same documented simplification as PO numbers (docs/03-database-design.md

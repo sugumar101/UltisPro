@@ -5,6 +5,7 @@ import { sendSuccess } from '../../shared/response-envelope';
 import { requireAuth } from './rbac.middleware';
 import { rateLimit } from '../../shared/rate-limit.middleware';
 import { env } from '../../config/env';
+import type { Selectable } from 'kysely';
 import type { UsersTable } from '../../shared/db';
 
 export const authRouter = Router();
@@ -36,15 +37,27 @@ const cookieOptions = {
   // Scoped to the auth routes: no other endpoint needs this cookie, so it
   // isn't attached to every API call where it could leak via logs or a
   // misbehaving proxy.
-  path: '/api/v1/auth',
+  //
+  // The prefix matters behind a subpath deployment: the browser matches the
+  // cookie path against the public URL (/retailpro/api/v1/auth), not the
+  // path Express sees once the proxy has stripped the prefix.
+  path: `${env.PUBLIC_PATH_PREFIX}/api/v1/auth`,
 };
 
-function toPublicUser(user: Pick<UsersTable, 'id' | 'organization_id' | 'email' | 'full_name'>) {
+/**
+ * `Selectable<UsersTable>`, not `Pick<UsersTable, …>`: the raw table
+ * interface describes columns in all three directions (select/insert/update),
+ * so `id` there is `Generated<string>` rather than the `string` a query
+ * actually returns. `Selectable<>` resolves each column to its select type,
+ * which is what callers pass in — and removes the `as string` casts that
+ * were papering over the mismatch.
+ */
+function toPublicUser(user: Pick<Selectable<UsersTable>, 'id' | 'organization_id' | 'email' | 'full_name'>) {
   return {
-    id: user.id as string,
-    organizationId: user.organization_id as string,
-    email: user.email as string,
-    fullName: user.full_name as string,
+    id: user.id,
+    organizationId: user.organization_id,
+    email: user.email,
+    fullName: user.full_name,
   };
 }
 

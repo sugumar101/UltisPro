@@ -16,6 +16,7 @@ import {
   type SalesPayment,
 } from '../../../lib/sales-api';
 import { ApiError } from '../../../lib/api-client';
+import { openAppWindow } from '../../../lib/app-url';
 
 export default function SalesInvoiceDetailPage() {
   const { ready, accessToken, assignments } = useRequireAuth();
@@ -96,12 +97,12 @@ export default function SalesInvoiceDetailPage() {
           </div>
 
           <div className="mt-4 flex gap-2">
-            <Button onClick={() => window.open(`/sales/${invoice.id}/print`, '_blank', 'width=420,height=700')}>
+            <Button onClick={() => openAppWindow(`/sales/${invoice.id}/print`, 'width=420,height=700')}>
               Print receipt
             </Button>
             <Button
               variant="secondary"
-              onClick={() => window.open(`/sales/${invoice.id}/print?format=a4`, '_blank')}
+              onClick={() => openAppWindow(`/sales/${invoice.id}/print?format=a4`)}
             >
               A4 tax invoice
             </Button>

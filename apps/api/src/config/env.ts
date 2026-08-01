@@ -74,6 +74,20 @@ const envSchema = z.object({
   DB_STATEMENT_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120_000).default(15_000),
 
   /**
+   * URL prefix the API is reachable at from the browser, when it sits behind
+   * a reverse proxy that mounts it under a subpath — e.g. `/retailpro` when
+   * the app is served from https://www.ultis.in/retailpro and the proxy
+   * routes /retailpro/api/* here.
+   *
+   * Only affects the refresh cookie's `path`. The cookie is scoped to the
+   * auth routes, and the browser matches that against the *public* URL, not
+   * the path Express sees after the proxy strips the prefix — so without
+   * this the cookie is set on a path the browser never sends it back for,
+   * and sessions silently fail to persist.
+   */
+  PUBLIC_PATH_PREFIX: z.string().default(''),
+
+  /**
    * SameSite policy for the refresh cookie.
    *
    * `lax` is right when the frontend and API share a registrable domain

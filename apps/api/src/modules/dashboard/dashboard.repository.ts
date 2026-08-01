@@ -8,7 +8,13 @@ export const dashboardRepository = {
       .select(({ fn }) => [fn.sum<string>('grand_total').as('total'), fn.countAll<string>().as('count')])
       .where('organization_id', '=', organizationId)
       .where('status', '!=', 'void')
-      .where('invoice_date', '>=', sql<Date>`date_trunc('day', now())`)
+      // Expressed as a whole raw predicate rather than passing a raw
+      // expression into the *value* position of `.where(col, op, value)`.
+      // Kysely types that operand against the column's declared type, and a
+      // `RawBuilder` doesn't satisfy it — the resulting error points at the
+      // column, not the raw fragment, which makes it needlessly hard to
+      // diagnose. A raw boolean predicate has no such ambiguity.
+      .where(sql<boolean>`invoice_date >= date_trunc('day', now())`)
       .executeTakeFirst();
     return { total: Number(row?.total ?? 0), count: Number(row?.count ?? 0) };
   },
@@ -78,7 +84,11 @@ export const dashboardRepository = {
       ])
       .where('organization_id', '=', organizationId)
       .where('status', '!=', 'void')
-      .where('invoice_date', '>=', sql<Date>`now() - (${`${days} days`})::interval`)
+      // Same raw-predicate form as todaySales(). The interval is built as a
+      // single bound string ("30 days") rather than concatenated in SQL,
+      // because `${days} || ' days'` binds `days` as an integer and Postgres
+      // has no `integer || text` operator.
+      .where(sql<boolean>`invoice_date >= now() - (${`${days} days`})::interval`)
       .groupBy(sql`date_trunc('day', invoice_date)`)
       .orderBy('day', 'asc')
       .execute();

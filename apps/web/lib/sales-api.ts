@@ -14,6 +14,8 @@ export interface SalesInvoice {
   grand_total: string;
   amount_paid: string;
   cashier_id: string | null;
+  /** Backs the public /r/<token> bill link. Null on invoices predating migration 0014. */
+  public_token?: string | null;
   /** Joined from the customer on list responses; absent on single-invoice fetches. */
   customerName?: string | null;
   customerPhone?: string | null;

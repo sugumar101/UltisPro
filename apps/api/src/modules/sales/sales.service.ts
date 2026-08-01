@@ -7,7 +7,7 @@ import { productsRepository } from '../products/products.repository';
 import { taxesRepository } from '../taxes/taxes.repository';
 import { customersRepository } from '../customers/customers.repository';
 import { applyStockMovement } from '../inventory/inventory.repository';
-import { salesRepository, generateCreditNoteNumber } from './sales.repository';
+import { salesRepository, generateCreditNoteNumber, generatePublicToken } from './sales.repository';
 import type { CreateSaleInput, ListSalesQuery, CreateSalesReturnInput } from './sales.dto';
 
 const ROUNDING_TOLERANCE = 0.01;
@@ -130,6 +130,70 @@ export const salesService = {
   },
 
   /**
+   * Receipt for an **unauthenticated** customer holding a share link.
+   *
+   * Returns a deliberately narrowed projection rather than reusing
+   * `getReceipt`. The authenticated version carries internal identifiers
+   * (variant ids, branch id, cashier id) and the customer's stored contact
+   * details and account balance — none of which belongs on a page reachable
+   * by anyone with the URL, including whoever the customer forwards it to.
+   *
+   * What a customer legitimately needs is what a paper receipt would show:
+   * the shop, the invoice number and date, what they bought, tax, and what
+   * they paid. That is all this returns.
+   */
+  async getPublicReceipt(token: string) {
+    const invoice = await salesRepository.findByPublicToken(token);
+    // Same 404 for a bad token and a missing invoice — distinguishing them
+    // would confirm which tokens exist.
+    if (!invoice) throw new AppError('NOT_FOUND', 'This bill link is not valid.');
+
+    const [items, payments, [store, branch, organization]] = await Promise.all([
+      salesRepository.listItemsForReceipt(invoice.id),
+      salesRepository.listPayments(invoice.id),
+      salesRepository.findInvoiceContext(invoice.organization_id, invoice.store_id, invoice.branch_id, null),
+    ]);
+
+    const customer = invoice.customer_id
+      ? await customersRepository.findById(invoice.organization_id, invoice.customer_id)
+      : null;
+
+    return {
+      invoice: {
+        invoiceNumber: invoice.invoice_number,
+        invoiceDate: invoice.invoice_date,
+        status: invoice.status,
+        subtotal: invoice.subtotal,
+        discountTotal: invoice.discount_total,
+        taxTotal: invoice.tax_total,
+        grandTotal: invoice.grand_total,
+      },
+      items: items.map((item) => ({
+        productName: item.productName,
+        sku: item.sku,
+        attributes: item.attributes,
+        hsnCode: item.hsnCode,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discountAmount: item.discountAmount,
+        taxAmount: item.taxAmount,
+        lineTotal: item.lineTotal,
+      })),
+      payments: payments.map((payment) => ({
+        amount: payment.amount,
+        paymentMode: payment.payment_mode,
+      })),
+      // First name only: a bill forwarded to a group chat shouldn't leak the
+      // customer's full identity, and the phone/email are never included.
+      customerName: customer && !customer.is_walkin ? customer.full_name.split(' ')[0] : null,
+      store: store ? { name: store.name, gstin: store.gstin, city: store.city } : null,
+      branch: branch ? { name: branch.name, phone: branch.phone } : null,
+      organizationName: organization?.display_name ?? null,
+      amountInWords: amountInWords(Number(invoice.grand_total)),
+    };
+  },
+
+  /**
    * The checkout endpoint (M9 core / POS's `/sales`). Everything — gapless
    * invoice numbering, per-line stock deduction, payment recording, and any
    * on-account shortfall charged to the customer — happens in one DB
@@ -239,6 +303,9 @@ export const salesService = {
         amount_paid: amountPaid,
         register_code: input.registerCode ?? null,
         cashier_id: actorUserId,
+        // Minted at creation so the share links are available the moment
+        // checkout returns, without a second round trip.
+        public_token: generatePublicToken(),
       });
 
       const items = [];

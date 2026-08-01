@@ -9,7 +9,8 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useRequireAuth } from '../../lib/hooks/use-require-auth';
 import { listSales, type SalesInvoice } from '../../lib/sales-api';
-import { shareOnWhatsApp, buildReceiptMessage } from '../../lib/whatsapp';
+import { sendOnWhatsApp, buildBillUrl } from '../../lib/share-bill';
+import { openAppWindow } from '../../lib/app-url';
 import { getOrganization } from '../../lib/settings-api';
 import { ApiError } from '../../lib/api-client';
 
@@ -134,25 +135,24 @@ export default function SalesPage() {
                         size="sm"
                         variant="ghost"
                         onClick={() =>
-                          window.open(`/sales/${inv.id}/print`, '_blank', 'width=420,height=700')
+                          openAppWindow(`/sales/${inv.id}/print`, 'width=420,height=700')
                         }
                       >
                         Print
                       </Button>
-                      {inv.customerPhone && !inv.customerIsWalkin ? (
+                      {inv.customerPhone && !inv.customerIsWalkin && inv.public_token ? (
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() => {
-                            const sent = shareOnWhatsApp(
-                              inv.customerPhone,
-                              buildReceiptMessage({
-                                storeName: orgName || 'our store',
-                                invoiceNumber: inv.invoice_number,
-                                grandTotal: inv.grand_total,
-                              }),
-                            );
-                            if (!sent) setError('That phone number does not look valid for WhatsApp.');
+                            const result = sendOnWhatsApp(inv.customerPhone, {
+                              storeName: orgName || 'our store',
+                              invoiceNumber: inv.invoice_number,
+                              grandTotal: inv.grand_total,
+                              billUrl: buildBillUrl(inv.public_token!),
+                              customerName: inv.customerName,
+                            });
+                            if (!result.ok) setError(result.reason);
                           }}
                         >
                           WhatsApp
