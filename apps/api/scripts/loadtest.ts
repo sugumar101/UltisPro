@@ -69,6 +69,21 @@ function percentile(sorted: number[], p: number): number {
   return sorted[index];
 }
 
+/**
+ * `Response.json()` resolves to `unknown` under current lib types, which is
+ * correct — the runtime has no idea what came back. This asserts the shape
+ * at one boundary rather than sprinkling casts through the fixture setup.
+ * A load-test harness pointed at a known API is the right place for that
+ * trade; application code should parse, not assert.
+ */
+async function readJson<T>(res: Response): Promise<T> {
+  return (await res.json()) as T;
+}
+
+interface EnvelopeOf<T> {
+  data: T;
+}
+
 async function setupFixture(baseUrl: string) {
   const email = `loadtest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@test.local`;
   const password = 'LoadTest Passphrase 2026';
@@ -86,14 +101,20 @@ async function setupFixture(baseUrl: string) {
     throw new Error(`Fixture setup failed at registration: ${registerRes.status} ${await registerRes.text()}`);
   }
 
-  const token: string = (await registerRes.json()).data.accessToken;
-  const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const registered = await readJson<EnvelopeOf<{ accessToken: string }>>(registerRes);
+  const auth = { Authorization: `Bearer ${registered.data.accessToken}`, 'Content-Type': 'application/json' };
 
-  const me = await (await fetch(`${baseUrl}/api/v1/auth/me`, { headers: auth })).json();
-  const branchId: string = me.data.assignments[0].branchId;
+  const me = await readJson<EnvelopeOf<{ assignments: { branchId: string }[] }>>(
+    await fetch(`${baseUrl}/api/v1/auth/me`, { headers: auth }),
+  );
+  const branchId = me.data.assignments[0].branchId;
 
-  const units = await (await fetch(`${baseUrl}/api/v1/units`, { headers: auth })).json();
-  const unitId: string = units.data.find((u: { name: string }) => u.name === 'Piece').id;
+  const units = await readJson<EnvelopeOf<{ id: string; name: string }[]>>(
+    await fetch(`${baseUrl}/api/v1/units`, { headers: auth }),
+  );
+  const unit = units.data.find((u) => u.name === 'Piece');
+  if (!unit) throw new Error('Fixture setup failed: no "Piece" unit found on the new organization');
+  const unitId = unit.id;
 
   // A handful of products so search has something to discriminate between,
   // each stocked deep enough that the run doesn't exhaust inventory and
@@ -109,7 +130,8 @@ async function setupFixture(baseUrl: string) {
         variants: [{ mrp: 500, sellingPrice: 400 }],
       }),
     });
-    const variant = (await productRes.json()).data.variants[0];
+    const product = await readJson<EnvelopeOf<{ variants: { id: string; barcode: string }[] }>>(productRes);
+    const variant = product.data.variants[0];
     variants.push({ id: variant.id, barcode: variant.barcode });
 
     await fetch(`${baseUrl}/api/v1/inventory/adjustments`, {

@@ -1,7 +1,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    /*
+     * Widened back to the package root because this config checks `scripts`
+     * and `test` as well as `src`. The build config anchors rootDir at
+     * `src` so the emitted layout matches the start script; nothing is
+     * emitted here, so the constraint only needs to be broad enough to
+     * cover every file being checked.
+     */
+    "rootDir": "."
   },
   "include": ["src", "scripts", "test"],
   "exclude": ["node_modules", "dist"]

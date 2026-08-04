@@ -2,7 +2,15 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    /*
+     * `src`, not `.`. tsc mirrors the source tree relative to rootDir, so
+     * with rootDir "." the entrypoint compiled to `dist/src/server.js`
+     * while package.json's start script pointed at `dist/server.js` — the
+     * build succeeded and the container then crash-looped on
+     * MODULE_NOT_FOUND. Anchoring at `src` makes the emitted layout mirror
+     * `src/` directly.
+     */
+    "rootDir": "src",
     "baseUrl": ".",
     "types": ["node"],
 
