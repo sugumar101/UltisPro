@@ -16,6 +16,15 @@ import { logger } from './logger';
  * client would see a confusing empty success rather than a clear error.
  */
 export function enforceHttps(req: Request, res: Response, next: NextFunction): void {
+  // Platform health checks (Railway, etc.) hit the container directly over
+  // plain HTTP, bypassing the TLS-terminating edge entirely — there's no
+  // forwarded-proto header to trust either way. Redirecting them would just
+  // make every health check fail, since checkers expect a 200, not a 308.
+  if (req.path === '/healthz' || req.path === '/readyz') {
+    next();
+    return;
+  }
+
   if (env.NODE_ENV !== 'production' || !env.ENFORCE_HTTPS || req.secure) {
     next();
     return;

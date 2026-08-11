@@ -282,6 +282,22 @@ export const salesRepository = {
     return Number(row?.total ?? 0);
   },
 
+  /**
+   * Same cumulative-returned-quantity figure as `alreadyReturnedQuantity`,
+   * but grouped across every line on an invoice in one query — used by the
+   * receipt/detail read path so the frontend can show how much of each
+   * line is still returnable without an N+1 query per item.
+   */
+  listReturnedQuantitiesByInvoice(invoiceId: string) {
+    return db
+      .selectFrom('sales_return_items as sri')
+      .innerJoin('sales_returns as sr', 'sr.id', 'sri.sales_return_id')
+      .select(({ fn }) => ['sri.sales_invoice_item_id as itemId', fn.sum<string>('sri.quantity').as('returnedQuantity')])
+      .where('sr.sales_invoice_id', '=', invoiceId)
+      .groupBy('sri.sales_invoice_item_id')
+      .execute();
+  },
+
   createReturnHeader(
     trx: Transaction<Database>,
     organizationId: string,

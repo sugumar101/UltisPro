@@ -59,11 +59,25 @@ export const salesService = {
     const invoice = await salesRepository.findById(organizationId, id);
     if (!invoice) throw new AppError('NOT_FOUND', 'Sales invoice not found');
 
-    const [items, payments, [store, branch, organization, cashier]] = await Promise.all([
+    const [rawItems, payments, [store, branch, organization, cashier], returnedRows] = await Promise.all([
       salesRepository.listItemsForReceipt(id),
       salesRepository.listPayments(id),
       salesRepository.findInvoiceContext(organizationId, invoice.store_id, invoice.branch_id, invoice.cashier_id),
+      salesRepository.listReturnedQuantitiesByInvoice(id),
     ]);
+
+    // Surfaces how much of each line is still returnable, so the invoice
+    // screen can clamp a partial-return quantity input instead of relying
+    // solely on the server-side over-return guard in createReturn.
+    const returnedByItemId = new Map(returnedRows.map((r) => [r.itemId, Number(r.returnedQuantity)]));
+    const items = rawItems.map((item) => {
+      const returnedQuantity = returnedByItemId.get(item.id) ?? 0;
+      return {
+        ...item,
+        returnedQuantity: String(returnedQuantity),
+        remainingQuantity: String(Number(item.quantity) - returnedQuantity),
+      };
+    });
 
     const customer = invoice.customer_id
       ? await customersRepository.findById(organizationId, invoice.customer_id)

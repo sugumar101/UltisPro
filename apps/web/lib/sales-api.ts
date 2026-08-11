@@ -123,6 +123,10 @@ export interface ReceiptItem {
   hsnCode: string | null;
   taxName: string | null;
   ratePercent: string | null;
+  /** Cumulative quantity already returned against this line, across every past return. */
+  returnedQuantity: string;
+  /** `quantity - returnedQuantity` — how much of this line can still be returned. */
+  remainingQuantity: string;
 }
 
 export interface ReceiptGstRow {
