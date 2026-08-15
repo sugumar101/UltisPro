@@ -64,9 +64,19 @@ The root `postinstall` builds `@ultispro/shared-types`, so `npm install` alone p
 
 ## 3. Environment variables
 
+Set `PORT` explicitly on **both** services and use the same number in the
+custom-domain dialog (§4). Railway will inject a `PORT` if you don't, but the
+domain form asks you to state the port yourself — and if the two disagree the
+domain resolves, TLS issues fine, and every request returns 502, which reads
+like an application crash rather than a routing mismatch.
+
+The two services are separate containers, so both can use 8080 without
+colliding.
+
 **ultispro-api**
 
 ```
+PORT=8080
 NODE_ENV=production
 DATABASE_URL=<Neon direct connection string, with ?sslmode=require>
 JWT_SECRET=<openssl rand -base64 48 — generate fresh>
@@ -81,6 +91,7 @@ DB_STATEMENT_TIMEOUT_MS=15000
 **ultispro-web**
 
 ```
+PORT=8080
 NEXT_PUBLIC_API_URL=https://api.ultifashions.com
 ```
 
@@ -96,8 +107,11 @@ Points worth understanding rather than copying blindly:
 
 Each service → **Settings → Networking → Custom Domain**:
 
-- `ultispro-api` → `api.ultifashions.com`
-- `ultispro-web` → `app.ultifashions.com`
+- `ultispro-api` → `api.ultifashions.com`, port **8080**
+- `ultispro-web` → `app.ultifashions.com`, port **8080**
+
+The port must match the `PORT` variable set in §3. A mismatch gives a working
+domain and certificate but a 502 on every request.
 
 Railway shows a CNAME target for each. At your registrar's DNS:
 

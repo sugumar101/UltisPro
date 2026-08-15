@@ -18,6 +18,17 @@ interface BarcodeProps {
    */
   caption?: string;
   className?: string;
+  /**
+   * Renders the SVG at this physical width in mm instead of `width`/`height`
+   * CSS pixels. Use this for print output: an unitless (px) SVG intrinsic
+   * size sits at 96dpi until the print engine scales the page up to the
+   * printer's real DPI, which can land bars on fractional device pixels and
+   * blur them. Sizing the SVG itself in mm — same fix as `PriceLabel` — lets
+   * the browser scale the vector content straight to the target physical
+   * size instead of through that intermediate raster. The `viewBox` stays in
+   * module units either way, so bar positions/widths are unaffected.
+   */
+  physicalWidthMm?: number;
 }
 
 /**
@@ -39,6 +50,7 @@ export function Barcode({
   showText = true,
   caption,
   className,
+  physicalWidthMm,
 }: BarcodeProps) {
   const modules = encodeEan13(value);
 
@@ -74,11 +86,14 @@ export function Barcode({
     }
   }
 
+  const svgWidth = physicalWidthMm != null ? `${physicalWidthMm}mm` : width;
+  const svgHeight = physicalWidthMm != null ? `${(physicalWidthMm * totalHeight) / width}mm` : totalHeight;
+
   return (
     <svg
       className={className}
-      width={width}
-      height={totalHeight}
+      width={svgWidth}
+      height={svgHeight}
       viewBox={`0 0 ${width} ${totalHeight}`}
       shapeRendering="crispEdges"
       role="img"

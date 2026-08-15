@@ -19,9 +19,9 @@ import { getBarRuns, isValidEan13, EAN13_MODULE_COUNT } from '../../lib/ean13';
 
 const BANDS = {
   header: 0.16, // brand + gender strip
-  meta: 0.19, // product name + size/colour
+  meta: 0.14, // product name + size/colour, single line
   code: 0.37, // barcode + SKU caption
-  footer: 0.28, // MRP caption + price, stacked and centred
+  footer: 0.33, // MRP caption + price, stacked and centred
 };
 
 const GENDER_SEGMENTS = ['MEN', 'WOMEN', 'KIDS'] as const;
@@ -37,7 +37,12 @@ export interface PriceLabelProps {
    * changing label stock.
    */
   safeInsetMm?: number;
+  /** Our own store/brand name, printed top-left. */
   brand: string;
+  /** The garment's own brand (e.g. "Yoth Jeans"), printed top-right. Falls
+   *  back to the gender strip when omitted, so labels for unbranded stock
+   *  keep showing MEN/WOMEN/KIDS in that slot. */
+  productBrand?: string;
   productName: string;
   size?: string;
   color?: string;
@@ -62,11 +67,43 @@ function truncateToWidth(text: string, fontSizeMm: number, availableMm: number):
   return `${text.slice(0, Math.max(1, maxChars - 1))}…`;
 }
 
+/**
+ * Fits "name · Size: X   Color: Y" onto the one line the name band has.
+ * Plain `truncateToWidth` on the concatenated string chops wherever the
+ * character budget runs out, which — for a long product name — lands
+ * mid-way through "Size:" and hides the value the label exists to show.
+ * Colour is the least important part (staff can eyeball the garment), so
+ * it's dropped first; the product name is shortened next, but the "Size: X"
+ * suffix itself is never truncated, since a garment size is functional
+ * information a torn-off fragment can't convey.
+ */
+function fitNameLine(name: string, size: string | undefined, color: string | undefined, fontSizeMm: number, availableMm: number): string {
+  const maxChars = Math.max(1, Math.floor(availableMm / (fontSizeMm * 0.52)));
+  const sizePart = size ? `Size: ${size}` : '';
+  const colorPart = color ? `Color: ${color}` : '';
+
+  const withBoth = [sizePart, colorPart].filter(Boolean).join('   ');
+  const withBothLine = withBoth ? `${name}  ·  ${withBoth}` : name;
+  if (withBothLine.length <= maxChars) return withBothLine;
+
+  const withSizeLine = sizePart ? `${name}  ·  ${sizePart}` : name;
+  if (withSizeLine.length <= maxChars) return withSizeLine;
+
+  if (sizePart) {
+    const suffix = `  ·  ${sizePart}`;
+    const nameBudget = maxChars - suffix.length - 1;
+    if (nameBudget >= 2) return `${name.slice(0, nameBudget)}…${suffix}`;
+  }
+
+  return truncateToWidth(withSizeLine, fontSizeMm, availableMm);
+}
+
 export function PriceLabel({
   widthMm,
   heightMm,
   safeInsetMm = 0,
   brand,
+  productBrand,
   productName,
   size,
   color,
@@ -102,10 +139,9 @@ export function PriceLabel({
   const brandSize = innerH * 0.125;
   const segmentSize = innerH * 0.055;
   const nameSize = innerH * 0.09;
-  const attrSize = innerH * 0.068;
   const captionSize = innerH * 0.066;
-  const mrpSize = innerH * 0.058;
-  const priceSize = innerH * 0.135;
+  const mrpSize = innerH * 0.09;
+  const priceSize = innerH * 0.2;
 
   const runs = getBarRuns(barcode);
   const validBarcode = runs !== null && isValidEan13(barcode);
@@ -129,7 +165,10 @@ export function PriceLabel({
   const barsH = Math.max(2, (codeH - captionBand) / (1 + guardExtraRatio));
   const guardExtra = barsH * guardExtraRatio;
 
-  const attrs = [size ? `Size: ${size}` : null, color ? `Color: ${color}` : null].filter(Boolean).join('   ');
+  // Size/colour ride on the same line as the product name rather than a line
+  // of their own — one fewer line frees vertical space for a bigger price,
+  // which matters more on a small tag than a second line ever did.
+  const nameLine = fitNameLine(productName, size, color, nameSize, innerW);
 
   // The price is centred rather than right-anchored. A right-anchored element
   // is the first casualty when a thermal printer's real printable width is
@@ -140,8 +179,8 @@ export function PriceLabel({
   // It is never truncated either; if a large figure (₹ 1,29,999) exceeds its
   // budget the type shrinks, because a clipped price is worse than a small one.
   const priceText = `₹ ${price.toLocaleString('en-IN')}`;
-  const priceBudget = innerW * 0.9;
-  const priceCapped = Math.min(priceSize, footerH * 0.5);
+  const priceBudget = innerW * 0.92;
+  const priceCapped = Math.min(priceSize, footerH * 0.62);
   const naturalPriceW = priceText.length * priceCapped * 0.55;
   const fittedPriceSize =
     naturalPriceW > priceBudget ? priceCapped * (priceBudget / naturalPriceW) : priceCapped;
@@ -159,7 +198,7 @@ export function PriceLabel({
     >
       <rect width={widthMm} height={heightMm} fill="#ffffff" />
 
-      {/* --- Header: brand, gender strip, rule --- */}
+      {/* --- Header: our brand (left), garment brand or gender strip (right) --- */}
       <text
         x={pad}
         y={headerY + brandSize * 0.82}
@@ -172,7 +211,19 @@ export function PriceLabel({
         {truncateToWidth(brand, brandSize, innerW * 0.55)}
       </text>
 
-      {showGenderStrip ? (
+      {productBrand ? (
+        <text
+          x={widthMm - pad}
+          y={headerY + brandSize * 0.82}
+          fontSize={segmentSize * 1.25}
+          fontWeight={700}
+          fontFamily="system-ui, -apple-system, sans-serif"
+          textAnchor="end"
+          fill="#000000"
+        >
+          {truncateToWidth(productBrand, segmentSize * 1.25, innerW * 0.4)}
+        </text>
+      ) : showGenderStrip ? (
         <text
           x={widthMm - pad}
           y={headerY + brandSize * 0.75}
@@ -201,7 +252,7 @@ export function PriceLabel({
         strokeWidth={heightMm * 0.012}
       />
 
-      {/* --- Product name + attributes --- */}
+      {/* --- Product name + size/colour, one line --- */}
       <text
         x={pad}
         y={metaY + nameSize * 0.88}
@@ -210,20 +261,8 @@ export function PriceLabel({
         fontFamily="system-ui, -apple-system, sans-serif"
         fill="#000000"
       >
-        {truncateToWidth(productName, nameSize, innerW)}
+        {nameLine}
       </text>
-
-      {attrs ? (
-        <text
-          x={pad}
-          y={metaY + nameSize * 0.88 + attrSize * 1.25}
-          fontSize={attrSize}
-          fontFamily="system-ui, -apple-system, sans-serif"
-          fill="#000000"
-        >
-          {truncateToWidth(attrs, attrSize, innerW)}
-        </text>
-      ) : null}
 
       {/* --- Barcode --- */}
       {validBarcode ? (
@@ -273,14 +312,16 @@ export function PriceLabel({
         strokeWidth={heightMm * 0.009}
       />
 
-      {/* Footer: caption then price, both centred and stacked. Positions are
+      {/* Footer: caption then price, each its own centred line. Positions are
           fractions of the footer band rather than multiples of their own font
-          size, so the price's descender always lands inside the band. */}
+          size, so the price's descender always lands inside the band. Each
+          <text> is centred independently, so the price sits dead-centre on
+          the label regardless of how wide the caption above it is. */}
       <text
         x={widthMm / 2}
-        y={footerY + footerH * 0.3}
-        fontSize={mrpSize * 0.95}
-        fontWeight={600}
+        y={footerY + footerH * 0.32}
+        fontSize={mrpSize}
+        fontWeight={700}
         fontFamily="system-ui, -apple-system, sans-serif"
         textAnchor="middle"
         fill="#000000"
@@ -290,7 +331,7 @@ export function PriceLabel({
 
       <text
         x={widthMm / 2}
-        y={footerY + footerH * 0.88}
+        y={footerY + footerH * 0.9}
         fontSize={fittedPriceSize}
         fontWeight={800}
         fontFamily="system-ui, -apple-system, sans-serif"

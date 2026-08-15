@@ -55,6 +55,29 @@ function activeSegments(gender: string | null): string[] {
   }
 }
 
+/**
+ * Compact template price size, in mm.
+ *
+ * Previously a fixed `8.5pt` regardless of label size, which read fine on a
+ * 50×30mm label but was disproportionately small on a 75×50mm one and, per
+ * user report, small even at the default size. Deriving it from the label's
+ * own height — mirroring `PriceLabel`'s mm-based scaling — keeps the price
+ * proportionate at every preset. Capped against the label width too, since
+ * a large rupee figure (₹1,29,999) on a narrow label would otherwise overflow
+ * before it could wrap (SVG-free flow layout has no ellipsis to fall back on).
+ */
+function compactPriceSizeMm(widthMm: number, heightMm: number, priceText: string): number {
+  const budget = widthMm * 0.86;
+  const capped = Math.max(3, heightMm * 0.16);
+  const naturalWidth = priceText.length * capped * 0.55;
+  return naturalWidth > budget ? capped * (budget / naturalWidth) : capped;
+}
+
+/** Compact template name size, in mm — same rationale as the price above. */
+function compactNameSizeMm(heightMm: number): number {
+  return Math.max(1.8, heightMm * 0.075);
+}
+
 interface LabelRow {
   key: string;
   product: Product;
@@ -115,11 +138,20 @@ function BarcodeLabels() {
       .finally(() => setLoading(false));
   }, [ready, accessToken, ids]);
 
-  /** Brand name if the product has one, else the org name, else a manual override. */
-  function headerFor(product: Product): string {
+  /**
+   * Our own store identity, top-left on the tag — a manual override if set,
+   * else the organisation's name. The garment's own brand (if any) prints
+   * separately via `productBrandFor`, so it no longer displaces this.
+   */
+  function headerFor(): string {
     if (headerOverride.trim()) return headerOverride.trim();
+    return orgName ?? '';
+  }
+
+  /** The garment's own brand, top-right on the tag — e.g. "Yoth Jeans". */
+  function productBrandFor(product: Product): string {
     const brand = brands.find((b) => b.id === product.brand_id);
-    return brand?.name ?? orgName ?? '';
+    return brand?.name ?? '';
   }
 
   if (!ready) return null;
@@ -158,10 +190,13 @@ function BarcodeLabels() {
         }
 
         /* --- Compact template --- */
+        /* Font sizes are set inline in mm (see compactPriceSizeMm/compactNameSizeMm)
+           rather than fixed here, so they scale with the chosen label size instead
+           of staying a constant point size on every preset. */
         .compact { align-items: center; justify-content: center; padding: 1.5mm; text-align: center; }
-        .compact .name { font: 600 7pt system-ui, sans-serif; line-height: 1.15;
+        .compact .name { font-family: system-ui, sans-serif; font-weight: 600; line-height: 1.15;
                          max-height: 2.4em; overflow: hidden; margin-bottom: 0.5mm; }
-        .compact .price { font: 700 8.5pt system-ui, sans-serif; margin-top: 0.5mm; }
+        .compact .price { font-family: system-ui, sans-serif; font-weight: 700; margin-top: 0.5mm; }
 
         @media print {
           body { background: #fff; }
@@ -276,7 +311,8 @@ function BarcodeLabels() {
                   widthMm={size.width}
                   heightMm={size.height}
                   safeInsetMm={safeInset}
-                  brand={headerFor(product)}
+                  brand={headerFor()}
+                  productBrand={productBrandFor(product)}
                   productName={product.name}
                   size={size_}
                   color={color}
@@ -287,7 +323,7 @@ function BarcodeLabels() {
                 />
               ) : (
                 <div className="compact" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                  <div className="name">
+                  <div className="name" style={{ fontSize: `${compactNameSizeMm(size.height)}mm` }}>
                     {product.name}
                     {size_ ? ` · ${size_}` : ''}
                   </div>
@@ -296,8 +332,14 @@ function BarcodeLabels() {
                     caption={variant.sku}
                     height={size.height > 26 ? 40 : 30}
                     moduleWidth={1.3}
+                    physicalWidthMm={size.width * 0.82}
                   />
-                  <div className="price">₹{price.toLocaleString('en-IN')}</div>
+                  <div
+                    className="price"
+                    style={{ fontSize: `${compactPriceSizeMm(size.width, size.height, `₹${price.toLocaleString('en-IN')}`)}mm` }}
+                  >
+                    ₹{price.toLocaleString('en-IN')}
+                  </div>
                 </div>
               )}
             </div>

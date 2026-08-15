@@ -108,6 +108,13 @@ function PrintInvoice() {
           body { background: #fff; }
           .toolbar { display: none !important; }
           .sheet { margin: 0; padding: 0; box-shadow: none; width: auto; }
+          /* .muted is a lighter #555 on screen for visual hierarchy, but a
+             thermal printer only burns black-or-nothing — it can't render a
+             mid-gray as anything but a faint, easy-to-miss dither. SKU lines,
+             invoice labels, and the return-policy footer all use this class,
+             so left unstyled here they print near-invisible even though the
+             on-screen preview looks fine. Force solid black for print only. */
+          .muted { color: #000; }
         }
       `}</style>
 
