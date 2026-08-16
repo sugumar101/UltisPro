@@ -238,7 +238,7 @@ export default function NewProductPage() {
             <h2 className="font-title-sm text-title-sm">Variants (SKUs)</h2>
             <p className="text-xs text-on-surface-variant">
               Leave SKU and Barcode blank — a unique SKU and a scannable in-store EAN-13 are generated for each
-              variant.
+              variant. If the item already has its own barcode, scan it directly into the Barcode field instead.
             </p>
           </div>
           <Button variant="secondary" size="sm" onClick={addVariant}>
@@ -257,7 +257,7 @@ export default function NewProductPage() {
               </FormField>
               <FormField label="Barcode">
                 <Input
-                  placeholder="Auto-generated"
+                  placeholder="Scan or type — leave blank to auto-generate"
                   value={v.barcode ?? ''}
                   onChange={(e) => updateVariant(i, { barcode: e.target.value })}
                 />

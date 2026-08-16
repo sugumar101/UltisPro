@@ -47,6 +47,10 @@ export default function NewClothingProductPage() {
   const [gender, setGender] = useState<Gender>('unisex');
   // Checked sizes and their quantities. Presence of a key = checked.
   const [selectedSizes, setSelectedSizes] = useState<Record<string, number>>({});
+  // Optional per-size barcode, scanned or typed — left blank, the API
+  // auto-generates one. Separate from selectedSizes since most sizes won't
+  // have one; keyed by size, only meaningful while that size is checked.
+  const [sizeBarcodes, setSizeBarcodes] = useState<Record<string, string>>({});
   const [mrp, setMrp] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
   // All optional — a shop that doesn't track cost price or run offers leaves these blank.
@@ -87,6 +91,7 @@ export default function NewClothingProductPage() {
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load categories'));
     setProductCategoryId('');
     setSelectedSizes({});
+    setSizeBarcodes({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productTypeId, accessToken]);
 
@@ -100,10 +105,21 @@ export default function NewClothingProductPage() {
       }
       return next;
     });
+    if (!checked) {
+      setSizeBarcodes((prev) => {
+        const next = { ...prev };
+        delete next[size];
+        return next;
+      });
+    }
   }
 
   function setSizeQuantity(size: string, quantity: number) {
     setSelectedSizes((prev) => ({ ...prev, [size]: quantity }));
+  }
+
+  function setSizeBarcode(size: string, barcode: string) {
+    setSizeBarcodes((prev) => ({ ...prev, [size]: barcode }));
   }
 
   async function handleSubmit() {
@@ -124,7 +140,11 @@ export default function NewClothingProductPage() {
         brandName: brandName.trim() || undefined,
         color: color.trim() || undefined,
         gender,
-        sizes: sizeEntries.map(([size, quantity]) => ({ size, quantity })),
+        sizes: sizeEntries.map(([size, quantity]) => ({
+          size,
+          quantity,
+          barcode: sizeBarcodes[size]?.trim() || undefined,
+        })),
         mrp: Number(mrp),
         sellingPrice: Number(sellingPrice),
         purchasePrice: purchasePrice.trim() ? Number(purchasePrice) : undefined,
@@ -147,6 +167,7 @@ export default function NewClothingProductPage() {
     setProductCategoryId('');
     setGender('unisex');
     setSelectedSizes({});
+    setSizeBarcodes({});
     setMrp('');
     setSellingPrice('');
     setPurchasePrice('');
@@ -397,7 +418,8 @@ export default function NewClothingProductPage() {
             <h2 className="font-title-sm text-title-sm">Sizes &amp; quantity</h2>
             <p className="text-xs text-on-surface-variant">
               Sizes come from the selected product type&apos;s size list (Settings &gt; Catalog Setup &gt; Product
-              Types). Check a size and enter how many items you have.
+              Types). Check a size and enter how many items you have. If the garment already has its own barcode,
+              scan it into the Barcode field — leave it blank to have one generated automatically.
             </p>
           </CardHeader>
           <CardContent>
@@ -419,14 +441,22 @@ export default function NewClothingProductPage() {
                         {size}
                       </label>
                       {checked ? (
-                        <Input
-                          className="mt-2"
-                          type="number"
-                          min={0}
-                          value={selectedSizes[size]}
-                          onChange={(e) => setSizeQuantity(size, Number(e.target.value))}
-                          placeholder="Qty"
-                        />
+                        <>
+                          <Input
+                            className="mt-2"
+                            type="number"
+                            min={0}
+                            value={selectedSizes[size]}
+                            onChange={(e) => setSizeQuantity(size, Number(e.target.value))}
+                            placeholder="Qty"
+                          />
+                          <Input
+                            className="mt-2"
+                            value={sizeBarcodes[size] ?? ''}
+                            onChange={(e) => setSizeBarcode(size, e.target.value)}
+                            placeholder="Scan or type barcode"
+                          />
+                        </>
                       ) : null}
                     </div>
                   );

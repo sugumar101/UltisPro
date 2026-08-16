@@ -63,7 +63,8 @@ export interface CreateClothingProductInput {
   /** Stored on each variant's attributes and printed on the price tag. */
   color?: string;
   gender: Gender;
-  sizes: { size: string; quantity: number }[];
+  /** `barcode` optional per size — left blank, the API auto-generates one. */
+  sizes: { size: string; quantity: number; barcode?: string }[];
   mrp: number;
   sellingPrice: number;
   /** All optional — a shop that doesn't track cost price or run offers leaves these blank. */

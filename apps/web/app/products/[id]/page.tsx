@@ -20,10 +20,27 @@ import {
   updateVariant,
   deleteVariant,
   addVariant,
+  listCategories,
+  listBrands,
+  listUnits,
+  listTaxes,
   type Product,
   type ProductVariant,
+  type Category,
+  type Brand,
+  type Unit,
+  type Tax,
 } from '../../../lib/products-api';
+import { GENDERS, type Gender } from '../../../lib/product-types-api';
 import { ApiError } from '../../../lib/api-client';
+
+const GENDER_LABELS: Record<Gender, string> = {
+  boy: 'Boy',
+  girl: 'Girl',
+  men: 'Men',
+  women: 'Women',
+  unisex: 'Unisex',
+};
 
 export default function ProductDetailPage() {
   const { ready, accessToken, assignments } = useRequireAuth();
@@ -37,8 +54,30 @@ export default function ProductDetailPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [taxes, setTaxes] = useState<Tax[]>([]);
+
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', hsnCode: '' });
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    hsnCode: '',
+    categoryId: '',
+    brandId: '',
+    unitId: '',
+    taxId: '',
+    trackBatches: false,
+    gender: 'unisex' as Gender,
+    color: '',
+  });
+  // Colour lives on each variant's attributes, not on the product row — one
+  // colour per product, shared across every size (see the clothing create
+  // flow). Editing it here means writing that same value across every
+  // variant, so this tracks what was loaded to tell "unchanged" from
+  // "changed" and avoid rewriting variants that don't need it.
+  const [originalColor, setOriginalColor] = useState('');
   // Which variant row is open for editing, and its working copy.
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   const [variantForm, setVariantForm] = useState({ sku: '', barcode: '', mrp: '', sellingPrice: '', reorderLevel: '' });
@@ -53,11 +92,20 @@ export default function ProductDetailPage() {
       const result = await getProduct(token, id);
       setProduct(result.product);
       setVariants(result.variants);
+      const color = result.variants[0]?.attributes?.color ?? '';
       setForm({
         name: result.product.name,
         description: result.product.description ?? '',
         hsnCode: result.product.hsn_code ?? '',
+        categoryId: result.product.category_id ?? '',
+        brandId: result.product.brand_id ?? '',
+        unitId: result.product.unit_id,
+        taxId: result.product.tax_id ?? '',
+        trackBatches: result.product.track_batches,
+        gender: (result.product.gender as Gender | null) ?? 'unisex',
+        color,
       });
+      setOriginalColor(color);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to load product');
     }
@@ -69,6 +117,18 @@ export default function ProductDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, accessToken, params.id]);
 
+  useEffect(() => {
+    if (!ready || !accessToken) return;
+    Promise.all([listCategories(accessToken), listBrands(accessToken), listUnits(accessToken), listTaxes(accessToken)])
+      .then(([c, b, u, t]) => {
+        setCategories(c);
+        setBrands(b);
+        setUnits(u);
+        setTaxes(t);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load form data'));
+  }, [ready, accessToken]);
+
   async function handleSave() {
     if (!accessToken || !params.id) return;
     setBusy(true);
@@ -79,7 +139,35 @@ export default function ProductDetailPage() {
         name: form.name,
         description: form.description,
         hsnCode: form.hsnCode,
+        categoryId: form.categoryId || null,
+        brandId: form.brandId || null,
+        unitId: form.unitId || undefined,
+        taxId: form.taxId || null,
+        trackBatches: form.trackBatches,
+        // Gender is clothing-taxonomy-only — leaving it out for a
+        // generic-flow product (no product_type_id) matches the schema,
+        // which treats an absent field as "nothing to correct" rather than
+        // forcing every product into a gender it was never given.
+        ...(product?.product_type_id ? { gender: form.gender } : {}),
       });
+
+      const trimmedColor = form.color.trim();
+      if (trimmedColor !== originalColor) {
+        // Not a product-table column — writing it means updating every
+        // variant's attributes, since that's where colour actually lives.
+        // `attributes` is replaced wholesale server-side, not merged, so
+        // each variant's existing attributes (size, in particular) have to
+        // be spread back in rather than sent as just `{ color }`.
+        await Promise.all(
+          variants.map((v) => {
+            const nextAttributes = { ...v.attributes };
+            if (trimmedColor) nextAttributes.color = trimmedColor;
+            else delete nextAttributes.color;
+            return updateVariant(accessToken, params.id, v.id, { attributes: nextAttributes });
+          }),
+        );
+      }
+
       await load(accessToken, params.id);
       setEditing(false);
       setMessage('Product updated.');
@@ -254,6 +342,10 @@ export default function ProductDetailPage() {
               <p className="mt-1 font-mono-data text-sm text-on-surface-variant">
                 HSN {product.hsn_code ?? '— not set'}
               </p>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                Created {new Date(product.created_at).toLocaleString('en-IN')} · Updated{' '}
+                {new Date(product.updated_at).toLocaleString('en-IN')}
+              </p>
             </div>
 
             <div className="flex shrink-0 flex-wrap justify-end gap-2">
@@ -297,6 +389,94 @@ export default function ProductDetailPage() {
                     onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
                   />
                 </FormField>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Category">
+                    <select
+                      className="field-base"
+                      value={form.categoryId}
+                      onChange={(e) => setForm((f) => ({ ...f, categoryId: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Brand">
+                    <select
+                      className="field-base"
+                      value={form.brandId}
+                      onChange={(e) => setForm((f) => ({ ...f, brandId: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {brands.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField label="Unit">
+                    <select
+                      className="field-base"
+                      value={form.unitId}
+                      onChange={(e) => setForm((f) => ({ ...f, unitId: e.target.value }))}
+                    >
+                      {units.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.symbol})
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label="Tax rate">
+                    <select
+                      className="field-base"
+                      value={form.taxId}
+                      onChange={(e) => setForm((f) => ({ ...f, taxId: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {taxes.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {product.product_type_id ? (
+                    <FormField label="Gender">
+                      <select
+                        className="field-base"
+                        value={form.gender}
+                        onChange={(e) => setForm((f) => ({ ...f, gender: e.target.value as Gender }))}
+                      >
+                        {GENDERS.map((g) => (
+                          <option key={g} value={g}>
+                            {GENDER_LABELS[g]}
+                          </option>
+                        ))}
+                      </select>
+                    </FormField>
+                  ) : null}
+                  {variants.length > 0 ? (
+                    <FormField label="Color">
+                      <Input
+                        value={form.color}
+                        placeholder="e.g. Black"
+                        onChange={(e) => setForm((f) => ({ ...f, color: e.target.value }))}
+                      />
+                      <p className="mt-1 text-xs text-on-surface-variant">
+                        Applies to all {variants.length} variant{variants.length === 1 ? '' : 's'} of this product.
+                      </p>
+                    </FormField>
+                  ) : null}
+                </div>
                 <FormField label="HSN code">
                   <Input
                     value={form.hsnCode}
@@ -304,6 +484,14 @@ export default function ProductDetailPage() {
                     onChange={(e) => setForm((f) => ({ ...f, hsnCode: e.target.value }))}
                   />
                 </FormField>
+                <label className="flex items-center gap-2 text-body-md">
+                  <input
+                    type="checkbox"
+                    checked={form.trackBatches}
+                    onChange={(e) => setForm((f) => ({ ...f, trackBatches: e.target.checked }))}
+                  />
+                  Track batches / expiry for this product
+                </label>
                 <div className="flex gap-2">
                   <Button disabled={busy} onClick={handleSave}>
                     {busy ? 'Saving…' : 'Save changes'}
@@ -339,7 +527,8 @@ export default function ProductDetailPage() {
                     <th className="p-4">MRP</th>
                     <th className="p-4">Selling price</th>
                     <th className="p-4">Reorder level</th>
-                    {canManage ? <th className="p-4" /> : null}
+                    <th className="p-4">In stock</th>
+                    <th className="p-4" />
                   </tr>
                 </thead>
                 <tbody>
@@ -377,6 +566,7 @@ export default function ProductDetailPage() {
                           onChange={(e) => setNewVariantForm((f) => ({ ...f, sellingPrice: e.target.value }))}
                         />
                       </td>
+                      <td className="p-3 text-sm text-on-surface-variant">—</td>
                       <td className="p-3 text-sm text-on-surface-variant">—</td>
                       {canManage ? (
                         <td className="p-3">
@@ -431,6 +621,9 @@ export default function ProductDetailPage() {
                             onChange={(e) => setVariantForm((f) => ({ ...f, reorderLevel: e.target.value }))}
                           />
                         </td>
+                        <td className="p-3 text-on-surface-variant" title="Managed from Inventory, not editable here">
+                          {v.stockOnHand ?? 0}
+                        </td>
                         <td className="p-3">
                           <div className="flex gap-2">
                             <Button size="sm" disabled={busy} onClick={() => handleSaveVariant(v.id)}>
@@ -460,28 +653,52 @@ export default function ProductDetailPage() {
                         <td className="p-4">{v.mrp}</td>
                         <td className="p-4">{v.selling_price}</td>
                         <td className="p-4">{v.reorder_level}</td>
-                        {canManage ? (
-                          <td className="p-4">
-                            <div className="flex justify-end gap-2">
-                              <Button size="sm" variant="secondary" onClick={() => startEditVariant(v)}>
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={busy || variants.length <= 1}
-                                title={
-                                  variants.length <= 1
-                                    ? 'A product must keep at least one variant — delete the product instead'
-                                    : undefined
-                                }
-                                onClick={() => handleDeleteVariant(v)}
-                              >
-                                Delete
-                              </Button>
-                            </div>
-                          </td>
-                        ) : null}
+                        <td className="p-4">
+                          {/* Summed across every branch, same convention as the products
+                              list — zero called out since it's what blocks a sale at the till. */}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-sm font-semibold ${
+                              (v.stockOnHand ?? 0) <= 0
+                                ? 'bg-error-container text-on-error-container'
+                                : 'bg-success-container text-on-success-container'
+                            }`}
+                          >
+                            {v.stockOnHand ?? 0}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title={`Print a barcode label for just this variant (${v.sku})`}
+                              onClick={() => openAppWindow(`/products/barcodes?ids=${product.id}&variantIds=${v.id}`)}
+                            >
+                              <Printer className="h-4 w-4" />
+                              Print
+                            </Button>
+                            {canManage ? (
+                              <>
+                                <Button size="sm" variant="secondary" onClick={() => startEditVariant(v)}>
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={busy || variants.length <= 1}
+                                  title={
+                                    variants.length <= 1
+                                      ? 'A product must keep at least one variant — delete the product instead'
+                                      : undefined
+                                  }
+                                  onClick={() => handleDeleteVariant(v)}
+                                >
+                                  Delete
+                                </Button>
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
                       </tr>
                     ),
                   )}

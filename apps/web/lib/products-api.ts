@@ -36,6 +36,8 @@ export interface ProductVariant {
   purchase_price: string;
   reorder_level: number;
   is_active: boolean;
+  /** Summed across every branch. Present on `getProduct` (detail) responses only. */
+  stockOnHand?: number;
 }
 
 export interface Product {
@@ -55,6 +57,8 @@ export interface Product {
   product_category_id: string | null;
   gender: string | null;
   product_code: string | null;
+  created_at: string;
+  updated_at: string;
   /**
    * Stock on hand summed across every branch, and the number of live
    * variants. Present on list responses only (computed per page), not on
@@ -71,6 +75,8 @@ export interface Product {
   color?: string | null;
   mrp?: string | null;
   sellingPrice?: string | null;
+  /** Joined from brand_id (list responses only). Null when the product has no brand set. */
+  brandName?: string | null;
 }
 
 export interface VariantInput {
@@ -129,12 +135,21 @@ export interface ListProductsResult {
 
 export async function listProducts(
   token: string,
-  params: { q?: string; categoryId?: string; brandId?: string; page?: number } = {},
+  params: {
+    q?: string;
+    categoryId?: string;
+    brandId?: string;
+    productTypeId?: string;
+    productCategoryId?: string;
+    page?: number;
+  } = {},
 ): Promise<ListProductsResult> {
   const search = new URLSearchParams();
   if (params.q) search.set('q', params.q);
   if (params.categoryId) search.set('categoryId', params.categoryId);
   if (params.brandId) search.set('brandId', params.brandId);
+  if (params.productTypeId) search.set('productTypeId', params.productTypeId);
+  if (params.productCategoryId) search.set('productCategoryId', params.productCategoryId);
   if (params.page) search.set('page', String(params.page));
 
   const envelope = await apiFetchEnvelope<Product[]>(`/api/v1/products?${search.toString()}`, {}, token);
@@ -163,8 +178,15 @@ export const createProduct = (token: string, input: CreateProductInput) =>
 export interface UpdateProductInput {
   name?: string;
   description?: string;
+  categoryId?: string | null;
+  brandId?: string | null;
+  unitId?: string;
+  taxId?: string | null;
   hsnCode?: string;
   isActive?: boolean;
+  trackBatches?: boolean;
+  /** Clothing taxonomy only — omit for a product created via the generic flow. */
+  gender?: 'boy' | 'girl' | 'men' | 'women' | 'unisex';
 }
 
 export const updateProduct = (token: string, id: string, input: UpdateProductInput) =>

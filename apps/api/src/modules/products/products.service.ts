@@ -22,6 +22,7 @@ import type {
 
 interface PgError extends Error {
   code?: string;
+  constraint?: string;
 }
 function isUniqueViolation(err: unknown): err is PgError {
   return typeof err === 'object' && err !== null && (err as PgError).code === '23505';
@@ -220,10 +221,16 @@ export const productsService = {
     const product = await productsRepository.findById(organizationId, id);
     if (!product) throw new AppError('NOT_FOUND', 'Product not found');
 
-    const [variants, images] = await Promise.all([
+    const [rawVariants, images] = await Promise.all([
       productsRepository.listVariantsForProduct(id),
       productsRepository.listImagesForProduct(id),
     ]);
+
+    const stock = await productsRepository.stockForVariants(
+      organizationId,
+      rawVariants.map((v) => v.id),
+    );
+    const variants = rawVariants.map((v) => ({ ...v, stockOnHand: stock.get(v.id) ?? 0 }));
 
     return { product, variants, images };
   },
@@ -354,10 +361,14 @@ export const productsService = {
 
     // Every size gets its own scannable barcode — that's the whole point of
     // size-level variants at the till: scanning a Medium must ring up and
-    // decrement the Medium, not "the product".
+    // decrement the Medium, not "the product". A size whose garment already
+    // carries a scannable code (scanned into the form, not typed) keeps
+    // that one rather than getting a second, in-store-only code minted on
+    // top of it — most garments still arrive with nothing printed, so
+    // auto-generation stays the default for any size left blank.
     const sizeBarcodes = new Map<number, string>();
-    for (const index of input.sizes.keys()) {
-      sizeBarcodes.set(index, await generateUniqueBarcode(organizationId));
+    for (const [index, sizeInput] of input.sizes.entries()) {
+      sizeBarcodes.set(index, sizeInput.barcode?.trim() || (await generateUniqueBarcode(organizationId)));
     }
 
     try {
@@ -456,6 +467,14 @@ export const productsService = {
       return result;
     } catch (err) {
       if (isUniqueViolation(err)) {
+        // A scanned barcode is the one collision here that isn't this
+        // function's own doing (product_code/SKU collisions are a random
+        // 5-digit code racing another request) — it means the code was
+        // already used by something else in the catalog, which the
+        // shopkeeper needs to know rather than being told to "retry".
+        if (err.constraint === 'product_variants_organization_id_barcode_key') {
+          throw new AppError('CONFLICT', 'That barcode is already used by another variant in your catalog.');
+        }
         throw new AppError('CONFLICT', 'A variant with this SKU already exists -- please retry (product code collision)');
       }
       throw err;
@@ -482,6 +501,8 @@ export const productsService = {
       ...(input.taxId !== undefined && { tax_id: input.taxId }),
       ...(input.hsnCode !== undefined && { hsn_code: input.hsnCode }),
       ...(input.isActive !== undefined && { is_active: input.isActive }),
+      ...(input.trackBatches !== undefined && { track_batches: input.trackBatches }),
+      ...(input.gender !== undefined && { gender: input.gender }),
     });
 
     await recordAudit({

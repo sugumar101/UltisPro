@@ -105,12 +105,25 @@ function BarcodeLabels() {
   const [preset, setPreset] = useState<PresetKey>('50x30');
   const [template, setTemplate] = useState<Template>('price-tag');
   const [copies, setCopies] = useState(1);
+  // Default on: re-labelling stock you already have means every physical
+  // item should get its own label, so a size with 2 in stock prints 2
+  // copies without anyone having to notice and set "Copies each" per size
+  // by hand. Turning it off falls back to the flat "Copies each" count —
+  // e.g. for pre-printing labels ahead of stock actually arriving.
+  const [matchStockCopies, setMatchStockCopies] = useState(true);
   const [headerOverride, setHeaderOverride] = useState('');
   // Thermal printers differ in how close to the physical label edge they can
   // print; nudge this up if anything clips on your hardware.
   const [safeInset, setSafeInset] = useState(0);
 
   const ids = useMemo(() => (searchParams.get('ids') ?? '').split(',').filter(Boolean), [searchParams]);
+  // Optional — narrows the products in `ids` down to specific variants
+  // (e.g. one size), rather than every variant those products have. Absent,
+  // every variant of every requested product prints, same as before.
+  const variantIds = useMemo(
+    () => (searchParams.get('variantIds') ?? '').split(',').filter(Boolean),
+    [searchParams],
+  );
 
   useEffect(() => {
     if (!ready || !accessToken || ids.length === 0) {
@@ -124,9 +137,11 @@ function BarcodeLabels() {
       getOrganization(accessToken).catch(() => null),
     ])
       .then(([results, brandList, organization]) => {
+        const wantVariant = variantIds.length > 0 ? new Set(variantIds) : null;
         const next: LabelRow[] = [];
         for (const result of results) {
           for (const variant of result.variants) {
+            if (wantVariant && !wantVariant.has(variant.id)) continue;
             next.push({ key: variant.id, product: result.product, variant });
           }
         }
@@ -136,7 +151,7 @@ function BarcodeLabels() {
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load products'))
       .finally(() => setLoading(false));
-  }, [ready, accessToken, ids]);
+  }, [ready, accessToken, ids, variantIds]);
 
   /**
    * Our own store identity, top-left on the tag — a manual override if set,
@@ -157,7 +172,10 @@ function BarcodeLabels() {
   if (!ready) return null;
 
   const size = LABEL_PRESETS[preset];
-  const printableLabels = rows.flatMap((row) => Array.from({ length: copies }, (_, i) => ({ ...row, copy: i })));
+  const printableLabels = rows.flatMap((row) => {
+    const count = matchStockCopies ? row.variant.stockOnHand ?? 0 : copies;
+    return Array.from({ length: count }, (_, i) => ({ ...row, copy: i }));
+  });
   // The tag scales to any label, so it can't clip — but below roughly this
   // size the type gets small enough to be worth warning about.
   const tagIsComfortable = size.width >= 40 && size.height >= 25;
@@ -256,13 +274,26 @@ function BarcodeLabels() {
           />
         </label>
 
-        <label style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <label
+          style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}
+          title="One label per item in stock — a size with 2 on hand prints 2 copies. Turn off to set a flat count instead."
+        >
+          <input
+            type="checkbox"
+            checked={matchStockCopies}
+            onChange={(e) => setMatchStockCopies(e.target.checked)}
+          />
+          Copies = stock on hand
+        </label>
+
+        <label style={{ fontSize: 14, display: 'flex', alignItems: 'center', gap: 6, opacity: matchStockCopies ? 0.5 : 1 }}>
           Copies each
           <input
             type="number"
             min={1}
             max={50}
             value={copies}
+            disabled={matchStockCopies}
             style={{ width: 66 }}
             onChange={(e) => setCopies(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
           />
@@ -300,6 +331,12 @@ function BarcodeLabels() {
       {loading ? <p className="empty">Loading labels…</p> : null}
       {!loading && !error && rows.length === 0 ? (
         <p className="empty">No products selected. Pick products on the Products page and choose “Print barcodes”.</p>
+      ) : null}
+      {!loading && !error && rows.length > 0 && printableLabels.length === 0 ? (
+        <p className="empty" style={{ color: '#d97706' }}>
+          Nothing to print — every selected variant shows 0 in stock, and copies are set to match stock on hand.
+          Turn that off above to print a flat number of copies instead.
+        </p>
       ) : null}
       {!loading && template === 'price-tag' && !tagIsComfortable ? (
         <p className="empty" style={{ color: '#d97706', paddingBottom: 0 }}>

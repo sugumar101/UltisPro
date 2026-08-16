@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export const GENDERS = ['boy', 'girl', 'men', 'women', 'unisex'] as const;
+
 export const variantInputSchema = z.object({
   // Optional: omitted, the service mints a readable unique SKU (see
   // products.service.ts#generateUniqueSku). A SKU is an internal identifier
@@ -50,6 +52,10 @@ export const updateProductSchema = z.object({
   taxId: z.string().uuid().nullable().optional(),
   hsnCode: z.string().max(20).optional(),
   isActive: z.boolean().optional(),
+  trackBatches: z.boolean().optional(),
+  // Clothing taxonomy only — undefined (not sent) on a product created via
+  // the generic flow, which has no gender to correct in the first place.
+  gender: z.enum(GENDERS).optional(),
 });
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
 
@@ -63,6 +69,11 @@ export const listProductsQuerySchema = z.object({
   q: z.string().optional(),
   categoryId: z.string().uuid().optional(),
   brandId: z.string().uuid().optional(),
+  // Clothing taxonomy (product_types/product_categories), distinct from the
+  // generic categoryId above — the catalog list filters on whichever a shop
+  // actually uses; clothing products have both, generic ones have neither.
+  productTypeId: z.string().uuid().optional(),
+  productCategoryId: z.string().uuid().optional(),
   page: z.coerce.number().int().positive().optional().default(1),
   pageSize: z.coerce.number().int().positive().max(100).optional().default(20),
 });
@@ -76,14 +87,17 @@ export type AttachImageInput = z.infer<typeof attachImageSchema>;
 
 // --- Clothing product creation (dedicated flow, see product-types module) ---
 
-export const GENDERS = ['boy', 'girl', 'men', 'women', 'unisex'] as const;
-
 export const clothingSizeInputSchema = z.object({
   size: z.string().min(1).max(20),
   // "For every size, add no. of items" -- 0 is valid (list the size as
   // carried without stocking it yet; a separate Inventory adjustment can
   // add quantity later).
   quantity: z.number().int().nonnegative(),
+  // Optional: left blank, the service generates a unique in-store EAN-13,
+  // same as the generic form. Scanning the garment's own existing barcode
+  // (a manufacturer or supplier code already on the tag) into this instead
+  // means the shop doesn't have to re-label stock that's already marked.
+  barcode: z.string().max(100).optional(),
 });
 
 export const createClothingProductSchema = z.object({

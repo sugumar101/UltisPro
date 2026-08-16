@@ -36,11 +36,17 @@ interface VariantWritableFields {
 
 export const productsRepository = {
   async list(organizationId: string, query: ListProductsQuery) {
+    // Left join, not a second per-page query like stockForProducts/
+    // representativeVariantsForProducts below — a product has at most one
+    // brand, so joining brands can't multiply rows the way joining variants
+    // would, and folding it in here is one query instead of two.
     let listQuery = db
       .selectFrom('products')
-      .selectAll()
-      .where('organization_id', '=', organizationId)
-      .where('deleted_at', 'is', null);
+      .leftJoin('brands', 'brands.id', 'products.brand_id')
+      .selectAll('products')
+      .select('brands.name as brandName')
+      .where('products.organization_id', '=', organizationId)
+      .where('products.deleted_at', 'is', null);
 
     let countQuery = db
       .selectFrom('products')
@@ -49,21 +55,29 @@ export const productsRepository = {
       .where('deleted_at', 'is', null);
 
     if (query.categoryId) {
-      listQuery = listQuery.where('category_id', '=', query.categoryId);
+      listQuery = listQuery.where('products.category_id', '=', query.categoryId);
       countQuery = countQuery.where('category_id', '=', query.categoryId);
     }
     if (query.brandId) {
-      listQuery = listQuery.where('brand_id', '=', query.brandId);
+      listQuery = listQuery.where('products.brand_id', '=', query.brandId);
       countQuery = countQuery.where('brand_id', '=', query.brandId);
     }
+    if (query.productTypeId) {
+      listQuery = listQuery.where('products.product_type_id', '=', query.productTypeId);
+      countQuery = countQuery.where('product_type_id', '=', query.productTypeId);
+    }
+    if (query.productCategoryId) {
+      listQuery = listQuery.where('products.product_category_id', '=', query.productCategoryId);
+      countQuery = countQuery.where('product_category_id', '=', query.productCategoryId);
+    }
     if (query.q) {
-      listQuery = listQuery.where('name', 'ilike', `%${query.q}%`);
+      listQuery = listQuery.where('products.name', 'ilike', `%${query.q}%`);
       countQuery = countQuery.where('name', 'ilike', `%${query.q}%`);
     }
 
     const [rows, countRow] = await Promise.all([
       listQuery
-        .orderBy('created_at', 'desc')
+        .orderBy('products.created_at', 'desc')
         .limit(query.pageSize)
         .offset((query.page - 1) * query.pageSize)
         .execute(),
@@ -106,6 +120,28 @@ export const productsRepository = {
         { totalStock: Number(row.totalStock ?? 0), variantCount: Number(row.variantCount ?? 0) },
       ]),
     );
+  },
+
+  /**
+   * Stock on hand per variant, summed across every branch — the product
+   * detail page's per-variant figures `stockForProducts`' own doc comment
+   * already promised. Same "separate query, not a join" reasoning: a branch
+   * breakdown would multiply rows for no benefit here, since the detail
+   * page (unlike Inventory) shows one number per variant, not per branch.
+   */
+  async stockForVariants(organizationId: string, variantIds: string[]) {
+    if (variantIds.length === 0) return new Map<string, number>();
+
+    const rows = await db
+      .selectFrom('product_variants as pv')
+      .leftJoin('branch_stock as bs', 'bs.product_variant_id', 'pv.id')
+      .select(({ fn }) => ['pv.id as variantId', fn.sum<string>(fn.coalesce('bs.quantity_on_hand', sql<number>`0`)).as('totalStock')])
+      .where('pv.organization_id', '=', organizationId)
+      .where('pv.id', 'in', variantIds)
+      .groupBy('pv.id')
+      .execute();
+
+    return new Map(rows.map((row) => [row.variantId, Number(row.totalStock ?? 0)]));
   },
 
   /**

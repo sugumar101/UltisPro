@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Printer, Search } from 'lucide-react';
 import { PERMISSIONS } from '@ultispro/shared-types';
@@ -10,7 +10,8 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { useRequireAuth } from '../../lib/hooks/use-require-auth';
 import { hasPermission } from '../../lib/stores/auth-store';
-import { listProducts, deleteProduct, type Product } from '../../lib/products-api';
+import { listProducts, deleteProduct, listBrands, type Product, type Brand } from '../../lib/products-api';
+import { listProductTypes, listProductCategories, type ProductType, type ProductCategory } from '../../lib/product-types-api';
 import { openAppWindow } from '../../lib/app-url';
 import { ApiError } from '../../lib/api-client';
 
@@ -26,6 +27,13 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   // Selection for bulk barcode printing. Held as a Set of product ids.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
+  const [productCategories, setProductCategories] = useState<ProductCategory[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [filterProductTypeId, setFilterProductTypeId] = useState('');
+  const [filterProductCategoryId, setFilterProductCategoryId] = useState('');
+  const [filterBrandId, setFilterBrandId] = useState('');
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -45,15 +53,36 @@ export default function ProductsPage() {
     openAppWindow(`/products/barcodes?ids=${ids.join(',')}`);
   }
 
+  // Filter changes can cascade into more than one load() call in quick
+  // succession (e.g. clearing a product type also clears its category,
+  // which is its own effect) — nothing here guarantees those requests
+  // resolve in the order they were sent. Without this, a slower, already
+  // stale request finishing after a faster, current one could overwrite
+  // correct results with filtered leftovers, leaving the list stuck
+  // showing a filter that the dropdowns no longer show as selected. Each
+  // call claims a ticket; only the most recently *issued* one is allowed
+  // to commit its response to state.
+  const requestIdRef = useRef(0);
+
   async function load(token: string) {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
-      const result = await listProducts(token, { q: q || undefined, page });
+      const result = await listProducts(token, {
+        q: q || undefined,
+        page,
+        brandId: filterBrandId || undefined,
+        productTypeId: filterProductTypeId || undefined,
+        productCategoryId: filterProductCategoryId || undefined,
+      });
+      if (requestId !== requestIdRef.current) return;
       setProducts(result.data);
       setTotal(result.meta.total);
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
       setError(err instanceof ApiError ? err.message : 'Failed to load products');
     } finally {
+      if (requestId !== requestIdRef.current) return;
       setLoading(false);
     }
   }
@@ -62,7 +91,32 @@ export default function ProductsPage() {
     if (!ready || !accessToken) return;
     load(accessToken);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, accessToken, page]);
+  }, [ready, accessToken, page, filterProductTypeId, filterProductCategoryId, filterBrandId]);
+
+  useEffect(() => {
+    if (!ready || !accessToken) return;
+    Promise.all([listProductTypes(accessToken), listBrands(accessToken)])
+      .then(([types, brandList]) => {
+        setProductTypes(types);
+        setBrands(brandList);
+      })
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load filters'));
+  }, [ready, accessToken]);
+
+  // Categories cascade from the selected type, same as the clothing create
+  // form — a category only means something within its type's namespace.
+  useEffect(() => {
+    if (!accessToken || !filterProductTypeId) {
+      setProductCategories([]);
+      setFilterProductCategoryId('');
+      return;
+    }
+    listProductCategories(accessToken, filterProductTypeId)
+      .then(setProductCategories)
+      .catch((err) => setError(err instanceof ApiError ? err.message : 'Failed to load categories'));
+    setFilterProductCategoryId('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterProductTypeId, accessToken]);
 
   async function handleDelete(product: Product) {
     if (!accessToken) return;
@@ -132,6 +186,68 @@ export default function ProductsPage() {
         </Button>
       </div>
 
+      <div className="mt-3 flex flex-wrap gap-2">
+        <select
+          className="field-base w-auto"
+          value={filterProductTypeId}
+          onChange={(e) => {
+            setFilterProductTypeId(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All product types</option>
+          {productTypes.map((pt) => (
+            <option key={pt.id} value={pt.id}>
+              {pt.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field-base w-auto"
+          value={filterProductCategoryId}
+          disabled={!filterProductTypeId}
+          onChange={(e) => {
+            setFilterProductCategoryId(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All product categories</option>
+          {productCategories.map((pc) => (
+            <option key={pc.id} value={pc.id}>
+              {pc.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="field-base w-auto"
+          value={filterBrandId}
+          onChange={(e) => {
+            setFilterBrandId(e.target.value);
+            setPage(1);
+          }}
+        >
+          <option value="">All brands</option>
+          {brands.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+        </select>
+        {filterProductTypeId || filterProductCategoryId || filterBrandId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFilterProductTypeId('');
+              setFilterBrandId('');
+              setPage(1);
+            }}
+          >
+            Clear filters
+          </Button>
+        ) : null}
+      </div>
+
       {error ? <p className="mt-4 text-sm text-error">{error}</p> : null}
 
       {selected.size > 0 ? (
@@ -163,7 +279,7 @@ export default function ProductsPage() {
                   />
                 </th>
                 <th className="p-4">Name</th>
-                <th className="p-4">HSN</th>
+                <th className="p-4">Brand</th>
                 <th className="p-4">Color</th>
                 <th className="p-4">Selling price</th>
                 <th className="p-4">MRP</th>
@@ -197,7 +313,7 @@ export default function ProductsPage() {
                       <p className="truncate text-sm text-on-surface-variant">{p.description}</p>
                     ) : null}
                   </td>
-                  <td className="p-4 font-mono-data text-on-surface-variant">{p.hsn_code ?? '—'}</td>
+                  <td className="p-4 text-on-surface-variant">{p.brandName ?? '—'}</td>
                   <td className="p-4 text-on-surface-variant">{p.color ?? '—'}</td>
                   <td className="p-4">{p.sellingPrice ? `₹${Number(p.sellingPrice).toLocaleString('en-IN')}` : '—'}</td>
                   <td className="p-4 text-on-surface-variant">
