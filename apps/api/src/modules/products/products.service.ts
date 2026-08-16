@@ -198,15 +198,19 @@ export const productsService = {
     // Stock is attached per row so the catalog list can show what's actually
     // on hand — the single most useful thing to see next to a product name,
     // and previously only reachable by opening Inventory separately.
-    const stock = await productsRepository.stockForProducts(
-      organizationId,
-      rows.map((row) => row.id),
-    );
+    const productIds = rows.map((row) => row.id);
+    const [stock, representative] = await Promise.all([
+      productsRepository.stockForProducts(organizationId, productIds),
+      productsRepository.representativeVariantsForProducts(organizationId, productIds),
+    ]);
 
     const withStock = rows.map((row) => ({
       ...row,
       totalStock: stock.get(row.id)?.totalStock ?? 0,
       variantCount: stock.get(row.id)?.variantCount ?? 0,
+      color: representative.get(row.id)?.color ?? null,
+      mrp: representative.get(row.id)?.mrp ?? null,
+      sellingPrice: representative.get(row.id)?.sellingPrice ?? null,
     }));
 
     return { rows: withStock, total, page: query.page, pageSize: query.pageSize };
@@ -382,7 +386,9 @@ export const productsService = {
             }),
             mrp: input.mrp,
             selling_price: input.sellingPrice,
-            purchase_price: 0,
+            purchase_price: input.purchasePrice ?? 0,
+            ...(input.originalPrice !== undefined && { original_price: input.originalPrice }),
+            ...(input.offerPrice !== undefined && { offer_price: input.offerPrice }),
             reorder_level: 0,
           });
           variants.push(variant);

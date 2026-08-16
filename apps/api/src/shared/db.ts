@@ -311,6 +311,9 @@ export interface ProductVariantsTable {
   mrp: Numeric;
   selling_price: Numeric;
   purchase_price: NumericDefault;
+  /** Optional, unlike purchase_price — 0 would misleadingly mean "free" rather than "not set". */
+  original_price: Numeric | null;
+  offer_price: Numeric | null;
   reorder_level: Generated<number>;
   is_active: Generated<boolean>;
   created_at: Timestamp;

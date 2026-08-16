@@ -112,6 +112,11 @@ export const createClothingProductSchema = z.object({
   }),
   mrp: z.number().nonnegative(),
   sellingPrice: z.number().nonnegative(),
+  // All optional — a shop that doesn't track cost price or run offers just
+  // leaves these blank, same as the generic product form's purchase price.
+  purchasePrice: z.number().nonnegative().optional(),
+  originalPrice: z.number().nonnegative().optional(),
+  offerPrice: z.number().nonnegative().optional(),
   branchId: z.string().uuid(),
 });
 export type CreateClothingProductInput = z.infer<typeof createClothingProductSchema>;

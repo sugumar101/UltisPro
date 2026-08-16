@@ -66,6 +66,10 @@ export interface CreateClothingProductInput {
   sizes: { size: string; quantity: number }[];
   mrp: number;
   sellingPrice: number;
+  /** All optional — a shop that doesn't track cost price or run offers leaves these blank. */
+  purchasePrice?: number;
+  originalPrice?: number;
+  offerPrice?: number;
   branchId: string;
 }
 

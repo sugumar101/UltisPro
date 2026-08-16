@@ -164,6 +164,9 @@ export default function ProductsPage() {
                 </th>
                 <th className="p-4">Name</th>
                 <th className="p-4">HSN</th>
+                <th className="p-4">Color</th>
+                <th className="p-4">Selling price</th>
+                <th className="p-4">MRP</th>
                 <th className="p-4">Variants</th>
                 <th className="p-4">In stock</th>
                 <th className="p-4">Status</th>
@@ -195,6 +198,11 @@ export default function ProductsPage() {
                     ) : null}
                   </td>
                   <td className="p-4 font-mono-data text-on-surface-variant">{p.hsn_code ?? '—'}</td>
+                  <td className="p-4 text-on-surface-variant">{p.color ?? '—'}</td>
+                  <td className="p-4">{p.sellingPrice ? `₹${Number(p.sellingPrice).toLocaleString('en-IN')}` : '—'}</td>
+                  <td className="p-4 text-on-surface-variant">
+                    {p.mrp ? `₹${Number(p.mrp).toLocaleString('en-IN')}` : '—'}
+                  </td>
                   <td className="p-4 text-on-surface-variant">
                     {p.variantCount ?? (p.has_variants ? '—' : 1)}
                   </td>
@@ -249,7 +257,7 @@ export default function ProductsPage() {
               ))}
               {!loading && products.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-10 text-center text-on-surface-variant">
+                  <td colSpan={10} className="p-10 text-center text-on-surface-variant">
                     No products yet.
                   </td>
                 </tr>

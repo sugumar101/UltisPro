@@ -28,6 +28,8 @@ interface VariantWritableFields {
   mrp: number;
   selling_price: number;
   purchase_price?: number;
+  original_price?: number | null;
+  offer_price?: number | null;
   reorder_level?: number;
   barcode?: string;
 }
@@ -102,6 +104,42 @@ export const productsRepository = {
       rows.map((row) => [
         row.productId,
         { totalStock: Number(row.totalStock ?? 0), variantCount: Number(row.variantCount ?? 0) },
+      ]),
+    );
+  },
+
+  /**
+   * One representative variant per product, for the catalog list's colour/
+   * price columns. A product's variants normally share the same colour and
+   * price — sizes are the only thing that differs (see the clothing create
+   * flow: one colour and one price cover every size) — so the first variant
+   * (by creation order) is a fair stand-in rather than needing a price
+   * range. A generic-form product whose variants genuinely diverge in price
+   * will show one of them, same tradeoff `stockForProducts` already makes
+   * by summing rather than listing every branch individually.
+   *
+   * `DISTINCT ON` rather than a join into `list()` for the same reason
+   * `stockForProducts` is separate: one row per product, not one per
+   * variant, so `LIMIT`/count on the paginated query stay correct.
+   */
+  async representativeVariantsForProducts(organizationId: string, productIds: string[]) {
+    if (productIds.length === 0) return new Map<string, { color: string | null; mrp: string; sellingPrice: string }>();
+
+    const rows = await db
+      .selectFrom('product_variants')
+      .distinctOn('product_id')
+      .select(['product_id as productId', 'attributes', 'mrp', 'selling_price as sellingPrice'])
+      .where('organization_id', '=', organizationId)
+      .where('product_id', 'in', productIds)
+      .where('deleted_at', 'is', null)
+      .orderBy('product_id')
+      .orderBy('created_at', 'asc')
+      .execute();
+
+    return new Map(
+      rows.map((row) => [
+        row.productId,
+        { color: row.attributes?.color ?? null, mrp: row.mrp, sellingPrice: row.sellingPrice },
       ]),
     );
   },

@@ -204,6 +204,18 @@ function BarcodeLabels() {
           .sheet { display: block; padding: 0; gap: 0; }
           .label { border: none; border-radius: 0; page-break-after: always; break-after: page; }
           .label:last-child { page-break-after: auto; break-after: auto; }
+          /* Browsers default to print-color-adjust: economy, which permits
+             lightening colours for ink economy instead of reproducing them
+             exactly as specified. Every fill on this label is already
+             literal #000, but this closes off that whole class of "renders
+             correctly on screen, comes out wrong on paper" failure — the
+             same gap that turned out to be the cause of a receipt printing
+             faint despite identical-looking source markup. */
+          *, *::before, *::after {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
         }
       `}</style>
 
@@ -318,7 +330,8 @@ function BarcodeLabels() {
                   color={color}
                   barcode={variant.barcode ?? ''}
                   caption={variant.sku}
-                  price={price}
+                  sellingPrice={Number(variant.selling_price)}
+                  mrp={Number(variant.mrp)}
                   activeSegments={on}
                 />
               ) : (

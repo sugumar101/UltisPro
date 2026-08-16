@@ -20,8 +20,8 @@ import { getBarRuns, isValidEan13, EAN13_MODULE_COUNT } from '../../lib/ean13';
 const BANDS = {
   header: 0.16, // brand + gender strip
   meta: 0.14, // product name + size/colour, single line
-  code: 0.37, // barcode + SKU caption
-  footer: 0.33, // MRP caption + price, stacked and centred
+  code: 0.33, // barcode + SKU caption
+  footer: 0.37, // selling price + MRP, stacked and centred
 };
 
 const GENDER_SEGMENTS = ['MEN', 'WOMEN', 'KIDS'] as const;
@@ -49,7 +49,10 @@ export interface PriceLabelProps {
   barcode: string;
   /** Human-readable line under the bars — usually the SKU, not the EAN digits. */
   caption: string;
-  price: number;
+  /** Printed prominently — what the customer actually pays. */
+  sellingPrice: number;
+  /** Printed smaller beneath the selling price, retail-label convention (see DMart-style tags) — lets a shopper see the discount rather than just the final number. */
+  mrp: number;
   /** Which of MEN/WOMEN/KIDS to emphasise; empty highlights none (unisex). */
   activeSegments: string[];
   showGenderStrip?: boolean;
@@ -109,7 +112,8 @@ export function PriceLabel({
   color,
   barcode,
   caption,
-  price,
+  sellingPrice,
+  mrp,
   activeSegments,
   showGenderStrip = true,
 }: PriceLabelProps) {
@@ -170,20 +174,40 @@ export function PriceLabel({
   // which matters more on a small tag than a second line ever did.
   const nameLine = fitNameLine(productName, size, color, nameSize, innerW);
 
-  // The price is centred rather than right-anchored. A right-anchored element
-  // is the first casualty when a thermal printer's real printable width is
-  // narrower than the label — which is exactly how the price ended up
-  // running off the edge. Centring means any edge loss eats empty margin on
-  // both sides instead of the most important number on the tag.
+  // SP and MRP are centred rather than right-anchored. A right-anchored
+  // element is the first casualty when a thermal printer's real printable
+  // width is narrower than the label — which is exactly how the price ended
+  // up running off the edge before. Centring means any edge loss eats empty
+  // margin on both sides instead of the numbers themselves.
   //
-  // It is never truncated either; if a large figure (₹ 1,29,999) exceeds its
-  // budget the type shrinks, because a clipped price is worse than a small one.
-  const priceText = `₹ ${price.toLocaleString('en-IN')}`;
-  const priceBudget = innerW * 0.92;
-  const priceCapped = Math.min(priceSize, footerH * 0.62);
-  const naturalPriceW = priceText.length * priceCapped * 0.55;
-  const fittedPriceSize =
-    naturalPriceW > priceBudget ? priceCapped * (priceBudget / naturalPriceW) : priceCapped;
+  // Both share one line rather than stacking on two. Stacked, the MRP line
+  // ended up close enough to the label's physical bottom edge that it
+  // stopped printing on some thermal printers even though it rendered fine
+  // on screen — a single line needs far less total vertical space, so it
+  // sits with generous clearance from both the divider above and the
+  // physical edge below instead of right at the margin.
+  //
+  // Neither is ever truncated; if the combined text exceeds its width
+  // budget both shrink together (same scale factor, so SP stays visually
+  // bigger than MRP at any size) rather than either one clipping.
+  const spText = `SP ₹ ${sellingPrice.toLocaleString('en-IN')}`;
+  const mrpText = `MRP ₹ ${mrp.toLocaleString('en-IN')}`;
+  const lineBudget = innerW * 0.92;
+  const spBase = Math.min(priceSize, footerH * 0.46);
+  // Was 0.5 — too small to read comfortably at a glance. 0.7 keeps MRP
+  // clearly secondary to SP while actually being legible.
+  const mrpBase = spBase * 0.7;
+  // SVG collapses runs of literal whitespace when rendering text, so
+  // padding the string with extra spaces (tried first) had no visible
+  // effect — the gap has to be a real geometric offset instead. `gapW` is
+  // sized off mrpBase (scales with the MRP tspan it precedes) and applied
+  // via `dx` on that tspan below, not via characters.
+  const gapW = mrpBase * 1.1;
+  const naturalLineW = spText.length * spBase * 0.55 + gapW + mrpText.length * mrpBase * 0.55;
+  const fitScale = naturalLineW > lineBudget ? lineBudget / naturalLineW : 1;
+  const fittedSpSize = spBase * fitScale;
+  const fittedMrpSize = mrpBase * fitScale;
+  const fittedGapW = gapW * fitScale;
 
   return (
     <svg
@@ -302,7 +326,7 @@ export function PriceLabel({
         </text>
       )}
 
-      {/* --- Footer: MRP + price --- */}
+      {/* --- Footer: SP and MRP on one line --- */}
       <line
         x1={pad}
         y1={footerY}
@@ -312,34 +336,26 @@ export function PriceLabel({
         strokeWidth={heightMm * 0.009}
       />
 
-      {/* Footer: caption then price, each its own centred line. Positions are
-          fractions of the footer band rather than multiples of their own font
-          size, so the price's descender always lands inside the band. Each
-          <text> is centred independently, so the price sits dead-centre on
-          the label regardless of how wide the caption above it is. */}
+      {/* Single <text> with both tspans (neither carries its own x), so
+          textAnchor="middle" centres the SP+MRP pair as one unit rather
+          than each independently. Positioned at 0.65 of the footer band —
+          with only one line to place instead of two, there's comfortable
+          clearance from both the divider above and the physical label edge
+          below without needing to tune it against either. */}
       <text
         x={widthMm / 2}
-        y={footerY + footerH * 0.32}
-        fontSize={mrpSize}
-        fontWeight={700}
+        y={footerY + footerH * 0.65}
         fontFamily="system-ui, -apple-system, sans-serif"
         textAnchor="middle"
         fill="#000000"
       >
-        MRP (incl. of all taxes)
-      </text>
-
-      <text
-        x={widthMm / 2}
-        y={footerY + footerH * 0.9}
-        fontSize={fittedPriceSize}
-        fontWeight={800}
-        fontFamily="system-ui, -apple-system, sans-serif"
-        textAnchor="middle"
-        letterSpacing={-fittedPriceSize * 0.02}
-        fill="#000000"
-      >
-        {priceText}
+        <tspan fontSize={fittedSpSize} fontWeight={800} letterSpacing={-fittedSpSize * 0.02}>
+          {spText}
+        </tspan>
+        <tspan dx={fittedGapW} fontSize={fittedMrpSize} fontWeight={600}>
+          {' '}
+          {mrpText}
+        </tspan>
       </text>
     </svg>
   );

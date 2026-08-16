@@ -62,6 +62,15 @@ export interface Product {
    */
   totalStock?: number;
   variantCount?: number;
+  /**
+   * From one representative variant (list responses only) — a product's
+   * variants normally share the same colour and price, sizes being the
+   * only thing that differs, so this is a fair stand-in rather than a
+   * price range. Null when the product has no variants yet.
+   */
+  color?: string | null;
+  mrp?: string | null;
+  sellingPrice?: string | null;
 }
 
 export interface VariantInput {

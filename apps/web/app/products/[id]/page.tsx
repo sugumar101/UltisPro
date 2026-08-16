@@ -42,6 +42,11 @@ export default function ProductDetailPage() {
   // Which variant row is open for editing, and its working copy.
   const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
   const [variantForm, setVariantForm] = useState({ sku: '', barcode: '', mrp: '', sellingPrice: '', reorderLevel: '' });
+  // A new-variant row, shown inline rather than navigating away — adding a
+  // size/colour to stock a shop already carries shouldn't feel like
+  // creating a whole new product.
+  const [addingVariant, setAddingVariant] = useState(false);
+  const [newVariantForm, setNewVariantForm] = useState({ size: '', color: '', mrp: '', sellingPrice: '' });
 
   async function load(token: string, id: string) {
     try {
@@ -175,19 +180,47 @@ export default function ProductDetailPage() {
     }
   }
 
-  async function handleAddVariant() {
+  function startAddVariant() {
+    // Pre-fill price from an existing variant when there is one — a new
+    // size of the same product almost always sells at the same price, and
+    // retyping it for every size is exactly the kind of friction this row
+    // exists to avoid.
+    const last = variants[variants.length - 1];
+    setNewVariantForm({
+      size: '',
+      color: last?.attributes?.color ?? '',
+      mrp: last ? String(last.mrp) : '',
+      sellingPrice: last ? String(last.selling_price) : '',
+    });
+    setAddingVariant(true);
+  }
+
+  async function handleCreateVariant() {
     if (!accessToken || !params.id) return;
+    if (!newVariantForm.mrp || !newVariantForm.sellingPrice) {
+      setError('MRP and selling price are required for a new variant.');
+      return;
+    }
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
+      const attributes: Record<string, string> = {};
+      if (newVariantForm.size.trim()) attributes.size = newVariantForm.size.trim();
+      if (newVariantForm.color.trim()) attributes.color = newVariantForm.color.trim();
+
       // SKU and barcode both omitted — the API generates unique values for
       // each, checked against the organization's existing ones. Minting a
       // SKU client-side (as this used to) can't see other variants and so
       // can collide.
-      await addVariant(accessToken, params.id, { mrp: 0, sellingPrice: 0 });
+      await addVariant(accessToken, params.id, {
+        attributes,
+        mrp: Number(newVariantForm.mrp),
+        sellingPrice: Number(newVariantForm.sellingPrice),
+      });
       await load(accessToken, params.id);
-      setMessage('Variant added — edit it to set the SKU and price.');
+      setAddingVariant(false);
+      setMessage('Variant added.');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to add variant');
     } finally {
@@ -292,7 +325,7 @@ export default function ProductDetailPage() {
                 </p>
               </div>
               {canManage ? (
-                <Button size="sm" variant="secondary" disabled={busy} onClick={handleAddVariant}>
+                <Button size="sm" variant="secondary" disabled={busy || addingVariant} onClick={startAddVariant}>
                   Add variant
                 </Button>
               ) : null}
@@ -310,6 +343,55 @@ export default function ProductDetailPage() {
                   </tr>
                 </thead>
                 <tbody>
+                  {addingVariant ? (
+                    <tr className="border-b border-outline-variant bg-surface-container-low">
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          <Input
+                            className="w-20"
+                            placeholder="Size"
+                            value={newVariantForm.size}
+                            onChange={(e) => setNewVariantForm((f) => ({ ...f, size: e.target.value }))}
+                          />
+                          <Input
+                            placeholder="Color (optional)"
+                            value={newVariantForm.color}
+                            onChange={(e) => setNewVariantForm((f) => ({ ...f, color: e.target.value }))}
+                          />
+                        </div>
+                      </td>
+                      <td className="p-3 text-sm text-on-surface-variant">Auto-generated</td>
+                      <td className="p-3">
+                        <Input
+                          type="number"
+                          className="w-24"
+                          value={newVariantForm.mrp}
+                          onChange={(e) => setNewVariantForm((f) => ({ ...f, mrp: e.target.value }))}
+                        />
+                      </td>
+                      <td className="p-3">
+                        <Input
+                          type="number"
+                          className="w-24"
+                          value={newVariantForm.sellingPrice}
+                          onChange={(e) => setNewVariantForm((f) => ({ ...f, sellingPrice: e.target.value }))}
+                        />
+                      </td>
+                      <td className="p-3 text-sm text-on-surface-variant">—</td>
+                      {canManage ? (
+                        <td className="p-3">
+                          <div className="flex gap-2">
+                            <Button size="sm" disabled={busy} onClick={handleCreateVariant}>
+                              Save
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => setAddingVariant(false)}>
+                              Cancel
+                            </Button>
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  ) : null}
                   {variants.map((v) =>
                     editingVariantId === v.id ? (
                       <tr key={v.id} className="border-b border-outline-variant last:border-0 bg-surface-container-low">

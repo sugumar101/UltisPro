@@ -89,8 +89,18 @@ function PrintInvoice() {
         .toolbar button { padding: 8px 16px; border-radius: 6px; border: 1px solid #ccc; background: #fff; cursor: pointer; font-size: 14px; }
         .toolbar button.primary { background: #1b5e20; color: #fff; border-color: #1b5e20; }
         .sheet { background: #fff; margin: 16px auto; padding: ${format === 'thermal' ? '6mm 4mm' : '14mm'}; box-shadow: 0 1px 6px rgba(0,0,0,.15); }
-        .sheet.thermal { width: 80mm; font-family: ui-monospace, 'Courier New', monospace; font-size: 11px; line-height: 1.35; }
-        .sheet.a4 { width: 210mm; min-height: 297mm; font-family: system-ui, sans-serif; font-size: 12px; color: #111; }
+        /* Explicit color is load-bearing here, not decorative: the root
+           layout's <body> applies the app's --on-surface token (#1e2433,
+           globals.css) as its default text color, and neither .sheet rule
+           overrode it before. #1e2433 reads as "basically black" on any
+           screen or laser/inkjet printer, but a thermal head thresholds
+           color to a burn/no-burn decision per dot — it isn't literally
+           #000000, so it dithers lighter than true black, which is why the
+           *entire* receipt (not just the .muted lines) was printing faint
+           on every thermal printer regardless of that printer's own
+           darkness setting. */
+        .sheet.thermal { width: 80mm; font-family: ui-monospace, 'Courier New', monospace; font-size: 11px; font-weight: 700; line-height: 1.35; color: #000; }
+        .sheet.a4 { width: 210mm; min-height: 297mm; font-family: system-ui, sans-serif; font-size: 12px; color: #000; }
         .center { text-align: center; }
         .right { text-align: right; }
         .bold { font-weight: 700; }
@@ -108,6 +118,19 @@ function PrintInvoice() {
           body { background: #fff; }
           .toolbar { display: none !important; }
           .sheet { margin: 0; padding: 0; box-shadow: none; width: auto; }
+          /* Browsers default to print-color-adjust: economy, which lets the
+             print pipeline lighten colors for ink economy instead of
+             reproducing exactly what's specified — unlike raw GDI text
+             (e.g. Notepad), which has no such layer and always prints at
+             full black. That gap is why this receipt printed faint on the
+             same printer/driver/paper that prints a Notepad file dark:
+             every color on the page was being economy-adjusted before it
+             ever reached the driver. "exact" forces literal reproduction. */
+          *, *::before, *::after {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
           /* .muted is a lighter #555 on screen for visual hierarchy, but a
              thermal printer only burns black-or-nothing — it can't render a
              mid-gray as anything but a faint, easy-to-miss dither. SKU lines,
@@ -136,6 +159,11 @@ function PrintInvoice() {
 
       {format === 'thermal' ? (
         <div className="sheet thermal">
+          {organization?.display_name ? (
+            <div className="center bold" style={{ fontSize: 15 }}>
+              {organization.display_name}
+            </div>
+          ) : null}
           <div className="center bold" style={{ fontSize: 14 }}>
             {store?.name ?? organization?.display_name ?? 'Store'}
           </div>
@@ -176,7 +204,7 @@ function PrintInvoice() {
                 <tr key={item.id}>
                   <td colSpan={2}>
                     <div>{item.productName}</div>
-                    <div className="muted" style={{ fontSize: 10 }}>
+                    <div className="muted" style={{ fontSize: 11 }}>
                       {item.sku}
                       {item.attributes?.size ? ` · Size ${item.attributes.size}` : ''}
                     </div>
@@ -232,7 +260,7 @@ function PrintInvoice() {
           <div style={{ fontSize: 10 }}>{receipt.amountInWords}</div>
           <div className="rule" />
           <div className="center">Thank you for shopping with us!</div>
-          <div className="center muted" style={{ fontSize: 10 }}>
+          <div className="center muted" style={{ fontSize: 11 }}>
             Goods once sold are subject to our return policy.
           </div>
         </div>

@@ -49,6 +49,10 @@ export default function NewClothingProductPage() {
   const [selectedSizes, setSelectedSizes] = useState<Record<string, number>>({});
   const [mrp, setMrp] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
+  // All optional — a shop that doesn't track cost price or run offers leaves these blank.
+  const [purchasePrice, setPurchasePrice] = useState('');
+  const [originalPrice, setOriginalPrice] = useState('');
+  const [offerPrice, setOfferPrice] = useState('');
   const [branchId, setBranchId] = useState('');
 
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +127,9 @@ export default function NewClothingProductPage() {
         sizes: sizeEntries.map(([size, quantity]) => ({ size, quantity })),
         mrp: Number(mrp),
         sellingPrice: Number(sellingPrice),
+        purchasePrice: purchasePrice.trim() ? Number(purchasePrice) : undefined,
+        originalPrice: originalPrice.trim() ? Number(originalPrice) : undefined,
+        offerPrice: offerPrice.trim() ? Number(offerPrice) : undefined,
         branchId,
       });
       setResult(created);
@@ -142,6 +149,9 @@ export default function NewClothingProductPage() {
     setSelectedSizes({});
     setMrp('');
     setSellingPrice('');
+    setPurchasePrice('');
+    setOriginalPrice('');
+    setOfferPrice('');
   }
 
   if (!ready) return null;
@@ -327,6 +337,33 @@ export default function NewClothingProductPage() {
                       </option>
                     ))}
                   </select>
+                </FormField>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField label="Purchase price (optional)">
+                  <Input
+                    type="number"
+                    value={purchasePrice}
+                    onChange={(e) => setPurchasePrice(e.target.value)}
+                    placeholder="Cost price"
+                  />
+                </FormField>
+                <FormField label="Original price (optional)">
+                  <Input
+                    type="number"
+                    value={originalPrice}
+                    onChange={(e) => setOriginalPrice(e.target.value)}
+                    placeholder="Pre-offer price"
+                  />
+                </FormField>
+                <FormField label="Offer price (optional)">
+                  <Input
+                    type="number"
+                    value={offerPrice}
+                    onChange={(e) => setOfferPrice(e.target.value)}
+                    placeholder="Discounted price"
+                  />
                 </FormField>
               </div>
 
